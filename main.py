@@ -164,11 +164,9 @@ class BusEtape2View(View):
         await bus_forfait(interaction, self.user_id)
 
 class BusEtape3View(View):
-    def __init__(self, user_id, carte1, carte2):
+    def __init__(self, user_id):
         super().__init__(timeout=60)
         self.user_id = user_id
-        self.carte1 = carte1
-        self.carte2 = carte2
 
     @discord.ui.button(label="Inside 🎯", style=discord.ButtonStyle.green)
     async def inside(self, interaction: discord.Interaction, button: Button):
@@ -233,7 +231,7 @@ async def bus_etape1(interaction, user_id, choix):
         bus_games[user_id]["etape"] = 2
         embed = discord.Embed(title="🚌 Ride the Bus", color=discord.Color.purple())
         embed.add_field(name="✅ Bonne réponse !", value=f"La carte était **{nouvelle}** ({couleur})", inline=False)
-        embed.add_field(name="Étape 2", value="La prochaine carte sera **plus haute** ou **plus basse** que **{nouvelle}** ?", inline=False)
+        embed.add_field(name="Étape 2", value=f"La prochaine carte sera **plus haute** ou **plus basse** que **{nouvelle}** ?", inline=False)
         await interaction.response.edit_message(embed=embed, view=BusEtape2View(user_id))
 
 async def bus_etape2(interaction, user_id, choix):
@@ -256,9 +254,9 @@ async def bus_etape2(interaction, user_id, choix):
         vals = sorted([valeur_carte(c1), valeur_carte(c2)])
         embed = discord.Embed(title="🚌 Ride the Bus", color=discord.Color.purple())
         embed.add_field(name="✅ Bonne réponse !", value=f"La carte était **{nouvelle}**", inline=False)
-        embed.add_field(name="Tes 2 dernières cartes", value=f"**{c1}** et **{c2}** (entre {vals[0]} et {vals[1]})", inline=False)
-        embed.add_field(name="Étape 3", value="La prochaine carte sera **inside** (entre tes 2 cartes) ou **outside** (en dehors) ?", inline=False)
-        await interaction.response.edit_message(embed=embed, view=BusEtape3View(user_id, c1, c2))
+        embed.add_field(name="Tes 2 dernières cartes", value=f"**{c1}** et **{c2}** (valeurs {vals[0]} et {vals[1]})", inline=False)
+        embed.add_field(name="Étape 3", value="La prochaine carte sera **Inside** 🎯 (entre les 2) ou **Outside** 💨 (en dehors) ?", inline=False)
+        await interaction.response.edit_message(embed=embed, view=BusEtape3View(user_id))
 
 async def bus_etape3(interaction, user_id, choix):
     if interaction.user.id != user_id:
@@ -278,7 +276,7 @@ async def bus_etape3(interaction, user_id, choix):
     else:
         bus_games[user_id]["etape"] = 4
         embed = discord.Embed(title="🚌 Ride the Bus", color=discord.Color.purple())
-        embed.add_field(name="✅ Bonne réponse !", value=f"La carte était **{nouvelle}**", inline=False)
+        embed.add_field(name="✅ Bonne réponse !", value=f"La carte était **{nouvelle}** (valeur {val_nouvelle})", inline=False)
         embed.add_field(name="Étape 4 - Dernière chance !", value="Devine la **couleur** de la prochaine carte !", inline=False)
         await interaction.response.edit_message(embed=embed, view=BusEtape4View(user_id))
 
