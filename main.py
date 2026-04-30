@@ -9,7 +9,7 @@ client = discord.Client(intents=intents)
 
 POLES_CHANNEL = "poles🤔"
 ANNONCES_CHANNEL = "annonces📣"
-REACTION_EMOJI = "ok~1"  # Nom de ton emoji custom sans les :
+REACTION_EMOJI = "okay"  # Nom de ton emoji custom sans les :
 
 @client.event
 async def on_member_join(member):
