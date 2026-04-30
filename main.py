@@ -18,10 +18,10 @@ async def on_ready():
 
 @client.event
 async def on_member_join(member):
-    role = discord.utils.get(member.guild.roles, name="membre")
+    role = discord.utils.get(member.guild.roles, name="Membre")
     if role:
         await member.add_roles(role)
-        print(f"Rôle membre ajouté à {member.name}")
+        print(f"Rôle Membre ajouté à {member.name}")
 
 @client.event
 async def on_message(message):
