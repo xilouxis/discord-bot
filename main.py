@@ -1,6 +1,7 @@
 import discord
 import os
 import random
+from discord.ui import View, Button
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -15,14 +16,21 @@ REACTION_EMOJI = "okay"
 MESSAGE_ID = 1499077252384559145
 ROLE_POLES_ID = 1499196527728398437
 ROLE_MEMBRE_ID = 1459044281368182884
-LEVEL_UP_CHANNEL_ID = 1458933891112112400
 
-# Blackjack en cours
 blackjack_games = {}
+bus_games = {}
 
 def nouvelle_carte():
     cartes = ["2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K", "A"]
     return random.choice(cartes)
+
+def valeur_carte(carte):
+    if carte in ["J", "Q", "K"]:
+        return 10
+    elif carte == "A":
+        return 11
+    else:
+        return int(carte)
 
 def valeur_main(main):
     total = 0
@@ -42,6 +50,262 @@ def valeur_main(main):
 
 def afficher_main(main):
     return " | ".join(main)
+
+def est_haut(carte):
+    ordre = ["2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K", "A"]
+    return ordre.index(carte) >= 6
+
+# =================== BLACKJACK ===================
+
+class BlackjackView(View):
+    def __init__(self, user_id):
+        super().__init__(timeout=60)
+        self.user_id = user_id
+
+    @discord.ui.button(label="Hit 🃏", style=discord.ButtonStyle.green)
+    async def hit(self, interaction: discord.Interaction, button: Button):
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("❌ C'est pas ta partie !", ephemeral=True)
+            return
+        game = blackjack_games[self.user_id]
+        game["joueur"].append(nouvelle_carte())
+        total = valeur_main(game["joueur"])
+        if total > 21:
+            del blackjack_games[self.user_id]
+            self.stop()
+            embed = discord.Embed(title="🃏 Blackjack - Bust !", description="💥 **Tu dépasses 21, tu as perdu !**", color=discord.Color.red())
+            embed.add_field(name="Ta main", value=f"{afficher_main(game['joueur'])} → **{total}**", inline=False)
+            await interaction.response.edit_message(embed=embed, view=None)
+        else:
+            embed = discord.Embed(title="🃏 Blackjack", color=discord.Color.green())
+            embed.add_field(name="Ta main", value=f"{afficher_main(game['joueur'])} → **{total}**", inline=False)
+            embed.add_field(name="Croupier", value=f"{game['bot'][0]} | ?", inline=False)
+            await interaction.response.edit_message(embed=embed, view=self)
+
+    @discord.ui.button(label="Stand 🛑", style=discord.ButtonStyle.red)
+    async def stand(self, interaction: discord.Interaction, button: Button):
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("❌ C'est pas ta partie !", ephemeral=True)
+            return
+        game = blackjack_games[self.user_id]
+        while valeur_main(game["bot"]) < 17:
+            game["bot"].append(nouvelle_carte())
+        total_joueur = valeur_main(game["joueur"])
+        total_bot = valeur_main(game["bot"])
+        del blackjack_games[self.user_id]
+        self.stop()
+        embed = discord.Embed(title="🃏 Blackjack - Résultat", color=discord.Color.blue())
+        embed.add_field(name="Ta main", value=f"{afficher_main(game['joueur'])} → **{total_joueur}**", inline=False)
+        embed.add_field(name="Croupier", value=f"{afficher_main(game['bot'])} → **{total_bot}**", inline=False)
+        if total_bot > 21 or total_joueur > total_bot:
+            embed.description = "🎉 **Tu as gagné !**"
+            embed.color = discord.Color.green()
+        elif total_joueur == total_bot:
+            embed.description = "🤝 **Égalité !**"
+            embed.color = discord.Color.yellow()
+        else:
+            embed.description = "😢 **Le croupier gagne !**"
+            embed.color = discord.Color.red()
+        await interaction.response.edit_message(embed=embed, view=None)
+
+# =================== RIDE THE BUS ===================
+
+class BusEtape1View(View):
+    def __init__(self, user_id):
+        super().__init__(timeout=60)
+        self.user_id = user_id
+
+    @discord.ui.button(label="Rouge ❤️", style=discord.ButtonStyle.red)
+    async def rouge(self, interaction: discord.Interaction, button: Button):
+        await bus_etape1(interaction, self.user_id, "rouge")
+
+    @discord.ui.button(label="Noir 🖤", style=discord.ButtonStyle.gray)
+    async def noir(self, interaction: discord.Interaction, button: Button):
+        await bus_etape1(interaction, self.user_id, "noir")
+
+class BusEtape2View(View):
+    def __init__(self, user_id):
+        super().__init__(timeout=60)
+        self.user_id = user_id
+
+    @discord.ui.button(label="Plus haut ⬆️", style=discord.ButtonStyle.green)
+    async def haut(self, interaction: discord.Interaction, button: Button):
+        await bus_etape2(interaction, self.user_id, "haut")
+
+    @discord.ui.button(label="Plus bas ⬇️", style=discord.ButtonStyle.red)
+    async def bas(self, interaction: discord.Interaction, button: Button):
+        await bus_etape2(interaction, self.user_id, "bas")
+
+class BusEtape3View(View):
+    def __init__(self, user_id):
+        super().__init__(timeout=60)
+        self.user_id = user_id
+
+    @discord.ui.button(label="Inside 🎯", style=discord.ButtonStyle.green)
+    async def inside(self, interaction: discord.Interaction, button: Button):
+        await bus_etape3(interaction, self.user_id, "inside")
+
+    @discord.ui.button(label="Outside 💨", style=discord.ButtonStyle.red)
+    async def outside(self, interaction: discord.Interaction, button: Button):
+        await bus_etape3(interaction, self.user_id, "outside")
+
+class BusEtape4View(View):
+    def __init__(self, user_id):
+        super().__init__(timeout=60)
+        self.user_id = user_id
+        cartes = ["2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K", "A"]
+        for carte in cartes:
+            self.add_item(BusCarteButton(user_id, carte))
+
+class BusCarteButton(Button):
+    def __init__(self, user_id, carte):
+        super().__init__(label=carte, style=discord.ButtonStyle.blurple)
+        self.user_id = user_id
+        self.carte = carte
+
+    async def callback(self, interaction: discord.Interaction):
+        await bus_etape4(interaction, self.user_id, self.carte)
+
+async def bus_etape1(interaction, user_id, choix):
+    if interaction.user.id != user_id:
+        await interaction.response.send_message("❌ C'est pas ta partie !", ephemeral=True)
+        return
+    game = bus_games[user_id]
+    nouvelle = nouvelle_carte()
+    couleur = random.choice(["rouge", "noir"])
+    gagne = choix == couleur
+    game["cartes"].append(nouvelle)
+    if not gagne:
+        del bus_games[user_id]
+        embed = discord.Embed(title="🚌 Ride the Bus - Perdu !", description=f"La carte était **{nouvelle}** ({couleur})\n\n😢 **Tu prends un shot !**", color=discord.Color.red())
+        await interaction.response.edit_message(embed=embed, view=None)
+    else:
+        bus_games[user_id]["etape"] = 2
+        embed = discord.Embed(title="🚌 Ride the Bus", color=discord.Color.purple())
+        embed.add_field(name="✅ Bonne réponse !", value=f"La carte était **{nouvelle}** ({couleur})", inline=False)
+        embed.add_field(name="Étape 2", value="Plus haut ⬆️ ou Plus bas ⬇️ ?", inline=False)
+        await interaction.response.edit_message(embed=embed, view=BusEtape2View(user_id))
+
+async def bus_etape2(interaction, user_id, choix):
+    if interaction.user.id != user_id:
+        await interaction.response.send_message("❌ C'est pas ta partie !", ephemeral=True)
+        return
+    game = bus_games[user_id]
+    nouvelle = nouvelle_carte()
+    gagne = (choix == "haut" and est_haut(nouvelle)) or (choix == "bas" and not est_haut(nouvelle))
+    game["cartes"].append(nouvelle)
+    if not gagne:
+        del bus_games[user_id]
+        embed = discord.Embed(title="🚌 Ride the Bus - Perdu !", description=f"La carte était **{nouvelle}**\n\n😢 **Tu prends un shot !**", color=discord.Color.red())
+        await interaction.response.edit_message(embed=embed, view=None)
+    else:
+        bus_games[user_id]["etape"] = 3
+        embed = discord.Embed(title="🚌 Ride the Bus", color=discord.Color.purple())
+        embed.add_field(name="✅ Bonne réponse !", value=f"La carte était **{nouvelle}**", inline=False)
+        embed.add_field(name="Étape 3", value="Inside 🎯 ou Outside 💨 ?", inline=False)
+        await interaction.response.edit_message(embed=embed, view=BusEtape3View(user_id))
+
+async def bus_etape3(interaction, user_id, choix):
+    if interaction.user.id != user_id:
+        await interaction.response.send_message("❌ C'est pas ta partie !", ephemeral=True)
+        return
+    game = bus_games[user_id]
+    nouvelle = nouvelle_carte()
+    vals = sorted([valeur_carte(c) for c in game["cartes"][-2:]])
+    val_nouvelle = valeur_carte(nouvelle)
+    gagne = (choix == "inside" and vals[0] < val_nouvelle < vals[1]) or \
+            (choix == "outside" and (val_nouvelle < vals[0] or val_nouvelle > vals[1]))
+    game["cartes"].append(nouvelle)
+    if not gagne:
+        del bus_games[user_id]
+        embed = discord.Embed(title="🚌 Ride the Bus - Perdu !", description=f"La carte était **{nouvelle}**\n\n😢 **Tu prends un shot !**", color=discord.Color.red())
+        await interaction.response.edit_message(embed=embed, view=None)
+    else:
+        bus_games[user_id]["etape"] = 4
+        embed = discord.Embed(title="🚌 Ride the Bus", color=discord.Color.purple())
+        embed.add_field(name="✅ Bonne réponse !", value=f"La carte était **{nouvelle}**", inline=False)
+        embed.add_field(name="Étape 4", value="Devine la carte exacte ! 🎴", inline=False)
+        await interaction.response.edit_message(embed=embed, view=BusEtape4View(user_id))
+
+async def bus_etape4(interaction, user_id, choix):
+    if interaction.user.id != user_id:
+        await interaction.response.send_message("❌ C'est pas ta partie !", ephemeral=True)
+        return
+    game = bus_games[user_id]
+    nouvelle = nouvelle_carte()
+    gagne = choix == nouvelle
+    del bus_games[user_id]
+    if not gagne:
+        embed = discord.Embed(title="🚌 Ride the Bus - Perdu !", description=f"La carte était **{nouvelle}**\n\n😢 **Tu prends un shot !**", color=discord.Color.red())
+    else:
+        embed = discord.Embed(title="🚌 Ride the Bus - Gagné !", description=f"La carte était **{nouvelle}**\n\n🎉 **Tu as survécu au bus !**", color=discord.Color.green())
+    await interaction.response.edit_message(embed=embed, view=None)
+
+# =================== COMMANDES ===================
+
+@tree.command(name="blackjack", description="Joue au blackjack !")
+async def blackjack(interaction: discord.Interaction):
+    user_id = interaction.user.id
+    if user_id in blackjack_games:
+        await interaction.response.send_message("❌ Partie en cours !", ephemeral=True)
+        return
+    main_joueur = [nouvelle_carte(), nouvelle_carte()]
+    main_bot = [nouvelle_carte(), nouvelle_carte()]
+    blackjack_games[user_id] = {"joueur": main_joueur, "bot": main_bot}
+    embed = discord.Embed(title="🃏 Blackjack", color=discord.Color.green())
+    embed.add_field(name="Ta main", value=f"{afficher_main(main_joueur)} → **{valeur_main(main_joueur)}**", inline=False)
+    embed.add_field(name="Croupier", value=f"{main_bot[0]} | ?", inline=False)
+    await interaction.response.send_message(embed=embed, view=BlackjackView(user_id))
+
+@tree.command(name="ridethebus", description="Joue à Ride the Bus !")
+async def ridethebus(interaction: discord.Interaction):
+    user_id = interaction.user.id
+    carte = nouvelle_carte()
+    bus_games[user_id] = {"carte": carte, "etape": 1, "cartes": [carte]}
+    embed = discord.Embed(title="🚌 Ride the Bus", color=discord.Color.purple())
+    embed.add_field(name="Ta carte", value=f"**{carte}**", inline=False)
+    embed.add_field(name="Étape 1", value="Rouge ❤️ ou Noir 🖤 ?", inline=False)
+    await interaction.response.send_message(embed=embed, view=BusEtape1View(user_id))
+
+@tree.command(name="slots", description="Lance les slots !")
+async def slots(interaction: discord.Interaction):
+    symboles = ["🍒", "🍋", "🍊", "⭐", "💎", "7️⃣"]
+    resultat = [random.choice(symboles) for _ in range(3)]
+    ligne = " | ".join(resultat)
+    if resultat[0] == resultat[1] == resultat[2]:
+        if resultat[0] == "💎":
+            msg = f"{ligne}\n\n💎 **JACKPOT DIAMANT !**"
+        elif resultat[0] == "7️⃣":
+            msg = f"{ligne}\n\n7️⃣ **TRIPLE 7 !**"
+        else:
+            msg = f"{ligne}\n\n🎉 **JACKPOT !**"
+    elif resultat[0] == resultat[1] or resultat[1] == resultat[2]:
+        msg = f"{ligne}\n\n✨ Deux identiques, presque !"
+    else:
+        msg = f"{ligne}\n\n😢 Perdu !"
+    embed = discord.Embed(title="🎰 Slots", description=msg, color=discord.Color.gold())
+    await interaction.response.send_message(embed=embed)
+
+@tree.command(name="pileouface", description="Lance une pièce !")
+async def pileouface(interaction: discord.Interaction):
+    resultat = random.choice(["Pile 🪙", "Face 🪙"])
+    await interaction.response.send_message(resultat)
+
+@tree.command(name="de", description="Lance un dé !")
+@discord.app_commands.describe(faces="Nombre de faces du dé (défaut: 6)")
+async def de(interaction: discord.Interaction, faces: int = 6):
+    resultat = random.randint(1, faces)
+    await interaction.response.send_message(f"🎲 Tu as obtenu : **{resultat}** (d{faces})")
+
+@tree.command(name="help", description="Affiche toutes les commandes du bot !")
+async def help(interaction: discord.Interaction):
+    embed = discord.Embed(title="📖 Commandes du bot", color=discord.Color.blue())
+    embed.add_field(name="🃏 /blackjack", value="Joue au blackjack avec boutons Hit/Stand", inline=False)
+    embed.add_field(name="🚌 /ridethebus", value="Joue à Ride the Bus avec boutons", inline=False)
+    embed.add_field(name="🎰 /slots", value="Lance les slots", inline=False)
+    embed.add_field(name="🪙 /pileouface", value="Lance une pièce", inline=False)
+    embed.add_field(name="🎲 /de [faces]", value="Lance un dé", inline=False)
+    await interaction.response.send_message(embed=embed)
 
 @client.event
 async def on_ready():
@@ -88,126 +352,5 @@ async def on_raw_reaction_remove(payload):
     role = guild.get_role(ROLE_POLES_ID)
     if member and role:
         await member.remove_roles(role)
-
-# 🎰 SLOTS
-@tree.command(name="slots", description="Lance les slots !")
-async def slots(interaction: discord.Interaction):
-    symboles = ["🍒", "🍋", "🍊", "⭐", "💎", "7️⃣"]
-    resultat = [random.choice(symboles) for _ in range(3)]
-    ligne = " | ".join(resultat)
-
-    if resultat[0] == resultat[1] == resultat[2]:
-        if resultat[0] == "💎":
-            msg = f"{ligne}\n\n💎 **JACKPOT DIAMANT !** Tu as tout gagné !"
-        elif resultat[0] == "7️⃣":
-            msg = f"{ligne}\n\n7️⃣ **TRIPLE 7 !** Énorme gain !"
-        else:
-            msg = f"{ligne}\n\n🎉 **JACKPOT !** Tu as gagné !"
-    elif resultat[0] == resultat[1] or resultat[1] == resultat[2]:
-        msg = f"{ligne}\n\n✨ Deux identiques, presque !"
-    else:
-        msg = f"{ligne}\n\n😢 Perdu ! Retente ta chance."
-
-    embed = discord.Embed(title="🎰 Slots", description=msg, color=discord.Color.gold())
-    await interaction.response.send_message(embed=embed)
-
-# 🃏 BLACKJACK - Démarrer
-@tree.command(name="blackjack", description="Joue au blackjack !")
-async def blackjack(interaction: discord.Interaction):
-    user_id = interaction.user.id
-    if user_id in blackjack_games:
-        await interaction.response.send_message("❌ Tu as déjà une partie en cours ! Utilise `/tirer` ou `/rester`.", ephemeral=True)
-        return
-
-    main_joueur = [nouvelle_carte(), nouvelle_carte()]
-    main_bot = [nouvelle_carte(), nouvelle_carte()]
-    blackjack_games[user_id] = {"joueur": main_joueur, "bot": main_bot}
-
-    embed = discord.Embed(title="🃏 Blackjack", color=discord.Color.green())
-    embed.add_field(name="Ta main", value=f"{afficher_main(main_joueur)} → **{valeur_main(main_joueur)}**", inline=False)
-    embed.add_field(name="Main du croupier", value=f"{main_bot[0]} | ?", inline=False)
-    embed.set_footer(text="Utilise /tirer pour une carte ou /rester pour arrêter")
-    await interaction.response.send_message(embed=embed)
-
-# 🃏 BLACKJACK - Tirer
-@tree.command(name="tirer", description="Tire une carte au blackjack !")
-async def tirer(interaction: discord.Interaction):
-    user_id = interaction.user.id
-    if user_id not in blackjack_games:
-        await interaction.response.send_message("❌ Pas de partie en cours ! Utilise `/blackjack`.", ephemeral=True)
-        return
-
-    game = blackjack_games[user_id]
-    game["joueur"].append(nouvelle_carte())
-    total = valeur_main(game["joueur"])
-
-    if total > 21:
-        del blackjack_games[user_id]
-        embed = discord.Embed(title="🃏 Blackjack - Bust !", color=discord.Color.red())
-        embed.add_field(name="Ta main", value=f"{afficher_main(game['joueur'])} → **{total}**", inline=False)
-        embed.description = "💥 **Bust ! Tu dépasses 21, tu as perdu !**"
-        await interaction.response.send_message(embed=embed)
-    else:
-        embed = discord.Embed(title="🃏 Blackjack", color=discord.Color.green())
-        embed.add_field(name="Ta main", value=f"{afficher_main(game['joueur'])} → **{total}**", inline=False)
-        embed.add_field(name="Main du croupier", value=f"{game['bot'][0]} | ?", inline=False)
-        embed.set_footer(text="Utilise /tirer pour une carte ou /rester pour arrêter")
-        await interaction.response.send_message(embed=embed)
-
-# 🃏 BLACKJACK - Rester
-@tree.command(name="rester", description="Reste sur ta main au blackjack !")
-async def rester(interaction: discord.Interaction):
-    user_id = interaction.user.id
-    if user_id not in blackjack_games:
-        await interaction.response.send_message("❌ Pas de partie en cours ! Utilise `/blackjack`.", ephemeral=True)
-        return
-
-    game = blackjack_games[user_id]
-    while valeur_main(game["bot"]) < 17:
-        game["bot"].append(nouvelle_carte())
-
-    total_joueur = valeur_main(game["joueur"])
-    total_bot = valeur_main(game["bot"])
-    del blackjack_games[user_id]
-
-    embed = discord.Embed(title="🃏 Blackjack - Résultat", color=discord.Color.blue())
-    embed.add_field(name="Ta main", value=f"{afficher_main(game['joueur'])} → **{total_joueur}**", inline=False)
-    embed.add_field(name="Main du croupier", value=f"{afficher_main(game['bot'])} → **{total_bot}**", inline=False)
-
-    if total_bot > 21 or total_joueur > total_bot:
-        embed.description = "🎉 **Tu as gagné !**"
-        embed.color = discord.Color.green()
-    elif total_joueur == total_bot:
-        embed.description = "🤝 **Égalité !**"
-        embed.color = discord.Color.yellow()
-    else:
-        embed.description = "😢 **Le croupier gagne !**"
-        embed.color = discord.Color.red()
-
-    await interaction.response.send_message(embed=embed)
-
-# ℹ️ HELP
-@tree.command(name="help", description="Affiche toutes les commandes du bot !")
-async def help(interaction: discord.Interaction):
-    embed = discord.Embed(title="📖 Commandes du bot", color=discord.Color.blue())
-    embed.add_field(name="/blackjack", value="Démarre une partie de blackjack 🃏", inline=False)
-    embed.add_field(name="/tirer", value="Tire une carte au blackjack", inline=False)
-    embed.add_field(name="/rester", value="Reste sur ta main au blackjack", inline=False)
-    embed.add_field(name="/slots", value="Lance les slots 🎰", inline=False)
-    embed.add_field(name="/pileouface", value="Lance une pièce 🪙", inline=False)
-    embed.add_field(name="/de [faces]", value="Lance un dé 🎲 (défaut: 6 faces)", inline=False)
-    embed.add_field(name="/help", value="Affiche ce message 📖", inline=False)
-    await interaction.response.send_message(embed=embed)
-
-@tree.command(name="pileouface", description="Lance une pièce !")
-async def pileouface(interaction: discord.Interaction):
-    resultat = random.choice(["Pile 🪙", "Face 🪙"])
-    await interaction.response.send_message(resultat)
-
-@tree.command(name="de", description="Lance un dé !")
-@discord.app_commands.describe(faces="Nombre de faces du dé (défaut: 6)")
-async def de(interaction: discord.Interaction, faces: int = 6):
-    resultat = random.randint(1, faces)
-    await interaction.response.send_message(f"🎲 Tu as obtenu : **{resultat}** (d{faces})")
 
 client.run(os.environ["TOKEN"])
