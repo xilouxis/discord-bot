@@ -12,6 +12,13 @@ ANNONCES_CHANNEL = "annonces📣"
 REACTION_EMOJI = "ok~1"  # Nom de ton emoji custom sans les :
 
 @client.event
+async def on_member_join(member):
+    role = discord.utils.get(member.guild.roles, name="membre")
+    if role:
+        await member.add_roles(role)
+        print(f"Rôle membre ajouté à {member.name}")
+
+@client.event
 async def on_ready():
     print(f"Bot connecté : {client.user}")
 
