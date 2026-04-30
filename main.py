@@ -7,7 +7,7 @@ intents.reactions = True
 intents.members = True
 client = discord.Client(intents=intents)
 
-POLES_CHANNEL = "poles"
+POLES_CHANNEL = "poles🤔"
 ANNONCES_CHANNEL = "annonces📣"
 REACTION_EMOJI = "ok~1"  # Nom de ton emoji custom sans les :
 
