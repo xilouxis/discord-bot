@@ -31,10 +31,10 @@ async def on_message(message):
     if message.channel.name != POLES_CHANNEL:
         return
     if message.poll:
-    thread = await message.create_thread(name="Discussion du sondage")
-    role = message.guild.get_role(ROLE_POLES_ID)
-    if role:
-        await message.channel.send(role.mention)
+        await message.create_thread(name="Discussion du sondage")
+        role = message.guild.get_role(ROLE_POLES_ID)
+        if role:
+            await message.channel.send(role.mention)
 
 @client.event
 async def on_raw_reaction_add(payload):
