@@ -13,24 +13,17 @@ tree = discord.app_commands.CommandTree(client)
 
 POLES_CHANNEL = "poles🤔"
 REACTION_EMOJI = "okay"
-MESSAGE_ID = 1499077252384559145
+MESSAGE_ID_POLES = 1499077252384559145
+MESSAGE_ID_2 = 1499587568856203295
 ROLE_POLES_ID = 1499196527728398437
 ROLE_MEMBRE_ID = 1459044281368182884
+ROLE_2_ID = 1499581112983359549
 
 blackjack_games = {}
-bus_games = {}
-
-COULEURS = ["♠️ Pique", "♥️ Coeur", "♦️ Carreau", "♣️ Trèfle"]
 
 def nouvelle_carte():
     cartes = ["2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K", "A"]
     return random.choice(cartes)
-
-def nouvelle_carte_complete():
-    cartes = ["2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K", "A"]
-    carte = random.choice(cartes)
-    couleur = random.choice(COULEURS)
-    return carte, couleur
 
 def valeur_carte(carte):
     if carte in ["J", "Q", "K"]:
@@ -58,10 +51,6 @@ def valeur_main(main):
 
 def afficher_main(main):
     return " | ".join(main)
-
-def est_haut(carte):
-    ordre = ["2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K", "A"]
-    return ordre.index(carte) >= 6
 
 # =================== BLACKJACK ===================
 
@@ -116,182 +105,16 @@ class BlackjackView(View):
             embed.color = discord.Color.red()
         await interaction.response.edit_message(embed=embed, view=None)
 
-    @discord.ui.button(label="Forfait 🏳️", style=discord.ButtonStyle.gray)
-    async def forfait(self, interaction: discord.Interaction, button: Button):
+    @discord.ui.button(label="Bust 💥", style=discord.ButtonStyle.gray)
+    async def bust(self, interaction: discord.Interaction, button: Button):
         if interaction.user.id != self.user_id:
             await interaction.response.send_message("❌ C'est pas ta partie !", ephemeral=True)
             return
         if self.user_id in blackjack_games:
             del blackjack_games[self.user_id]
         self.stop()
-        embed = discord.Embed(title="🃏 Blackjack - Forfait", description="🏳️ **Tu as abandonné la partie !**", color=discord.Color.gray())
+        embed = discord.Embed(title="🃏 Blackjack - Bust !", description="💥 **Tu as abandonné la partie !**", color=discord.Color.gray())
         await interaction.response.edit_message(embed=embed, view=None)
-
-# =================== RIDE THE BUS ===================
-
-class BusEtape1View(View):
-    def __init__(self, user_id):
-        super().__init__(timeout=60)
-        self.user_id = user_id
-
-    @discord.ui.button(label="Rouge ❤️", style=discord.ButtonStyle.red)
-    async def rouge(self, interaction: discord.Interaction, button: Button):
-        await bus_etape1(interaction, self.user_id, "rouge")
-
-    @discord.ui.button(label="Noir 🖤", style=discord.ButtonStyle.gray)
-    async def noir(self, interaction: discord.Interaction, button: Button):
-        await bus_etape1(interaction, self.user_id, "noir")
-
-    @discord.ui.button(label="Forfait 🏳️", style=discord.ButtonStyle.gray)
-    async def forfait(self, interaction: discord.Interaction, button: Button):
-        await bus_forfait(interaction, self.user_id)
-
-class BusEtape2View(View):
-    def __init__(self, user_id):
-        super().__init__(timeout=60)
-        self.user_id = user_id
-
-    @discord.ui.button(label="Plus haut ⬆️", style=discord.ButtonStyle.green)
-    async def haut(self, interaction: discord.Interaction, button: Button):
-        await bus_etape2(interaction, self.user_id, "haut")
-
-    @discord.ui.button(label="Plus bas ⬇️", style=discord.ButtonStyle.red)
-    async def bas(self, interaction: discord.Interaction, button: Button):
-        await bus_etape2(interaction, self.user_id, "bas")
-
-    @discord.ui.button(label="Forfait 🏳️", style=discord.ButtonStyle.gray)
-    async def forfait(self, interaction: discord.Interaction, button: Button):
-        await bus_forfait(interaction, self.user_id)
-
-class BusEtape3View(View):
-    def __init__(self, user_id):
-        super().__init__(timeout=60)
-        self.user_id = user_id
-
-    @discord.ui.button(label="Inside 🎯", style=discord.ButtonStyle.green)
-    async def inside(self, interaction: discord.Interaction, button: Button):
-        await bus_etape3(interaction, self.user_id, "inside")
-
-    @discord.ui.button(label="Outside 💨", style=discord.ButtonStyle.red)
-    async def outside(self, interaction: discord.Interaction, button: Button):
-        await bus_etape3(interaction, self.user_id, "outside")
-
-    @discord.ui.button(label="Forfait 🏳️", style=discord.ButtonStyle.gray)
-    async def forfait(self, interaction: discord.Interaction, button: Button):
-        await bus_forfait(interaction, self.user_id)
-
-class BusEtape4View(View):
-    def __init__(self, user_id):
-        super().__init__(timeout=60)
-        self.user_id = user_id
-
-    @discord.ui.button(label="♠️ Pique", style=discord.ButtonStyle.gray)
-    async def pique(self, interaction: discord.Interaction, button: Button):
-        await bus_etape4(interaction, self.user_id, "♠️ Pique")
-
-    @discord.ui.button(label="♥️ Coeur", style=discord.ButtonStyle.red)
-    async def coeur(self, interaction: discord.Interaction, button: Button):
-        await bus_etape4(interaction, self.user_id, "♥️ Coeur")
-
-    @discord.ui.button(label="♦️ Carreau", style=discord.ButtonStyle.red)
-    async def carreau(self, interaction: discord.Interaction, button: Button):
-        await bus_etape4(interaction, self.user_id, "♦️ Carreau")
-
-    @discord.ui.button(label="♣️ Trèfle", style=discord.ButtonStyle.gray)
-    async def trefle(self, interaction: discord.Interaction, button: Button):
-        await bus_etape4(interaction, self.user_id, "♣️ Trèfle")
-
-    @discord.ui.button(label="Forfait 🏳️", style=discord.ButtonStyle.gray)
-    async def forfait(self, interaction: discord.Interaction, button: Button):
-        await bus_forfait(interaction, self.user_id)
-
-async def bus_forfait(interaction, user_id):
-    if interaction.user.id != user_id:
-        await interaction.response.send_message("❌ C'est pas ta partie !", ephemeral=True)
-        return
-    if user_id in bus_games:
-        del bus_games[user_id]
-    embed = discord.Embed(title="🚌 Ride the Bus - Forfait", description="🏳️ **Tu as abandonné... tu prends quand même un shot !** 😂", color=discord.Color.gray())
-    await interaction.response.edit_message(embed=embed, view=None)
-
-async def bus_etape1(interaction, user_id, choix):
-    if interaction.user.id != user_id:
-        await interaction.response.send_message("❌ C'est pas ta partie !", ephemeral=True)
-        return
-    game = bus_games[user_id]
-    nouvelle = nouvelle_carte()
-    couleur = random.choice(["rouge", "noir"])
-    gagne = choix == couleur
-    game["cartes"].append(nouvelle)
-    if not gagne:
-        del bus_games[user_id]
-        embed = discord.Embed(title="🚌 Ride the Bus - Perdu !", description=f"La carte était **{nouvelle}** ({couleur})\n\n😢 **Tu prends un shot !**", color=discord.Color.red())
-        await interaction.response.edit_message(embed=embed, view=None)
-    else:
-        bus_games[user_id]["etape"] = 2
-        embed = discord.Embed(title="🚌 Ride the Bus", color=discord.Color.purple())
-        embed.add_field(name="✅ Bonne réponse !", value=f"La carte était **{nouvelle}** ({couleur})", inline=False)
-        embed.add_field(name="Étape 2", value=f"La prochaine carte sera **plus haute** ou **plus basse** que **{nouvelle}** ?", inline=False)
-        await interaction.response.edit_message(embed=embed, view=BusEtape2View(user_id))
-
-async def bus_etape2(interaction, user_id, choix):
-    if interaction.user.id != user_id:
-        await interaction.response.send_message("❌ C'est pas ta partie !", ephemeral=True)
-        return
-    game = bus_games[user_id]
-    derniere = game["cartes"][-1]
-    nouvelle = nouvelle_carte()
-    gagne = (choix == "haut" and est_haut(nouvelle)) or (choix == "bas" and not est_haut(nouvelle))
-    game["cartes"].append(nouvelle)
-    if not gagne:
-        del bus_games[user_id]
-        embed = discord.Embed(title="🚌 Ride the Bus - Perdu !", description=f"La carte était **{nouvelle}**\n\n😢 **Tu prends un shot !**", color=discord.Color.red())
-        await interaction.response.edit_message(embed=embed, view=None)
-    else:
-        bus_games[user_id]["etape"] = 3
-        c1 = game["cartes"][-2]
-        c2 = game["cartes"][-1]
-        vals = sorted([valeur_carte(c1), valeur_carte(c2)])
-        embed = discord.Embed(title="🚌 Ride the Bus", color=discord.Color.purple())
-        embed.add_field(name="✅ Bonne réponse !", value=f"La carte était **{nouvelle}**", inline=False)
-        embed.add_field(name="Tes 2 dernières cartes", value=f"**{c1}** et **{c2}** (valeurs {vals[0]} et {vals[1]})", inline=False)
-        embed.add_field(name="Étape 3", value="La prochaine carte sera **Inside** 🎯 (entre les 2) ou **Outside** 💨 (en dehors) ?", inline=False)
-        await interaction.response.edit_message(embed=embed, view=BusEtape3View(user_id))
-
-async def bus_etape3(interaction, user_id, choix):
-    if interaction.user.id != user_id:
-        await interaction.response.send_message("❌ C'est pas ta partie !", ephemeral=True)
-        return
-    game = bus_games[user_id]
-    nouvelle = nouvelle_carte()
-    vals = sorted([valeur_carte(c) for c in game["cartes"][-2:]])
-    val_nouvelle = valeur_carte(nouvelle)
-    gagne = (choix == "inside" and vals[0] < val_nouvelle < vals[1]) or \
-            (choix == "outside" and (val_nouvelle < vals[0] or val_nouvelle > vals[1]))
-    game["cartes"].append(nouvelle)
-    if not gagne:
-        del bus_games[user_id]
-        embed = discord.Embed(title="🚌 Ride the Bus - Perdu !", description=f"La carte était **{nouvelle}** (valeur {val_nouvelle})\n\n😢 **Tu prends un shot !**", color=discord.Color.red())
-        await interaction.response.edit_message(embed=embed, view=None)
-    else:
-        bus_games[user_id]["etape"] = 4
-        embed = discord.Embed(title="🚌 Ride the Bus", color=discord.Color.purple())
-        embed.add_field(name="✅ Bonne réponse !", value=f"La carte était **{nouvelle}** (valeur {val_nouvelle})", inline=False)
-        embed.add_field(name="Étape 4 - Dernière chance !", value="Devine la **couleur** de la prochaine carte !", inline=False)
-        await interaction.response.edit_message(embed=embed, view=BusEtape4View(user_id))
-
-async def bus_etape4(interaction, user_id, choix):
-    if interaction.user.id != user_id:
-        await interaction.response.send_message("❌ C'est pas ta partie !", ephemeral=True)
-        return
-    carte, couleur = nouvelle_carte_complete()
-    gagne = choix == couleur
-    del bus_games[user_id]
-    if not gagne:
-        embed = discord.Embed(title="🚌 Ride the Bus - Perdu !", description=f"La carte était **{carte} {couleur}**\n\n😢 **Tu prends un shot !**", color=discord.Color.red())
-    else:
-        embed = discord.Embed(title="🚌 Ride the Bus - Gagné !", description=f"La carte était **{carte} {couleur}**\n\n🎉 **Tu as survécu au bus !**", color=discord.Color.green())
-    await interaction.response.edit_message(embed=embed, view=None)
 
 # =================== COMMANDES ===================
 
@@ -308,16 +131,6 @@ async def blackjack(interaction: discord.Interaction):
     embed.add_field(name="Ta main", value=f"{afficher_main(main_joueur)} → **{valeur_main(main_joueur)}**", inline=False)
     embed.add_field(name="Croupier", value=f"{main_bot[0]} | ?", inline=False)
     await interaction.response.send_message(embed=embed, view=BlackjackView(user_id))
-
-@tree.command(name="ridethebus", description="Joue à Ride the Bus !")
-async def ridethebus(interaction: discord.Interaction):
-    user_id = interaction.user.id
-    carte = nouvelle_carte()
-    bus_games[user_id] = {"carte": carte, "etape": 1, "cartes": [carte]}
-    embed = discord.Embed(title="🚌 Ride the Bus", color=discord.Color.purple())
-    embed.add_field(name="Ta carte de départ", value=f"**{carte}**", inline=False)
-    embed.add_field(name="Étape 1", value="La prochaine carte sera **Rouge** ❤️ ou **Noir** 🖤 ?", inline=False)
-    await interaction.response.send_message(embed=embed, view=BusEtape1View(user_id))
 
 @tree.command(name="slots", description="Lance les slots !")
 async def slots(interaction: discord.Interaction):
@@ -352,8 +165,7 @@ async def de(interaction: discord.Interaction, faces: int = 6):
 @tree.command(name="help", description="Affiche toutes les commandes du bot !")
 async def help(interaction: discord.Interaction):
     embed = discord.Embed(title="📖 Commandes du bot", color=discord.Color.blue())
-    embed.add_field(name="🃏 /blackjack", value="Joue au blackjack (Hit/Stand/Forfait)", inline=False)
-    embed.add_field(name="🚌 /ridethebus", value="Joue à Ride the Bus en 4 étapes", inline=False)
+    embed.add_field(name="🃏 /blackjack", value="Joue au blackjack (Hit/Stand/Bust)", inline=False)
     embed.add_field(name="🎰 /slots", value="Lance les slots", inline=False)
     embed.add_field(name="🪙 /pileouface", value="Lance une pièce", inline=False)
     embed.add_field(name="🎲 /de [faces]", value="Lance un dé", inline=False)
@@ -385,24 +197,34 @@ async def on_message(message):
 async def on_raw_reaction_add(payload):
     if payload.emoji.name != REACTION_EMOJI:
         return
-    if payload.message_id != MESSAGE_ID:
-        return
     guild = client.get_guild(payload.guild_id)
     member = guild.get_member(payload.user_id)
-    role = guild.get_role(ROLE_POLES_ID)
-    if member and role:
-        await member.add_roles(role)
+
+    if payload.message_id == MESSAGE_ID_POLES:
+        role = guild.get_role(ROLE_POLES_ID)
+        if member and role:
+            await member.add_roles(role)
+
+    elif payload.message_id == MESSAGE_ID_2:
+        role = guild.get_role(ROLE_2_ID)
+        if member and role:
+            await member.add_roles(role)
 
 @client.event
 async def on_raw_reaction_remove(payload):
     if payload.emoji.name != REACTION_EMOJI:
         return
-    if payload.message_id != MESSAGE_ID:
-        return
     guild = client.get_guild(payload.guild_id)
     member = guild.get_member(payload.user_id)
-    role = guild.get_role(ROLE_POLES_ID)
-    if member and role:
-        await member.remove_roles(role)
+
+    if payload.message_id == MESSAGE_ID_POLES:
+        role = guild.get_role(ROLE_POLES_ID)
+        if member and role:
+            await member.remove_roles(role)
+
+    elif payload.message_id == MESSAGE_ID_2:
+        role = guild.get_role(ROLE_2_ID)
+        if member and role:
+            await member.remove_roles(role)
 
 client.run(os.environ["TOKEN"])
