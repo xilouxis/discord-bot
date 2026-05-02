@@ -2,14 +2,8 @@ import discord
 import os
 import aiohttp
 import psycopg2
-import psycopg2.extras
 import secrets
 from discord.ui import View, Button
-
-# Railway injecte les variables d'environnement directement — pas besoin de dotenv
-# Si tu testes en local, crée un fichier .env et décommente les 2 lignes suivantes :
-# from dotenv import load_dotenv
-# load_dotenv()
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -33,15 +27,14 @@ bus_games = {}
 roulette_games = {}
 
 # =================== BASE DE DONNÉES (PostgreSQL) ===================
-# Railway fournit la variable DATABASE_URL automatiquement quand tu ajoutes
-# un service PostgreSQL à ton projet Railway.
 
 def get_conn():
-    """Ouvre une connexion PostgreSQL à partir de DATABASE_URL."""
-    return psycopg2.connect(os.environ["DATABASE_URL"], sslmode="require")
+    url = os.environ["DATABASE_URL"]
+    if url.startswith("postgres://"):
+        url = url.replace("postgres://", "postgresql://", 1)
+    return psycopg2.connect(url)
 
 def init_db():
-    """Crée la table bank si elle n'existe pas encore."""
     with get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute("""
@@ -569,7 +562,6 @@ async def roulette_parier(interaction, game_id, type_pari):
     add_solde(user_id, -mise)
     game["paris"][user_id] = {"type": type_pari, "mise": mise}
     member = interaction.guild.get_member(user_id)
-    name = member.display_name if member else str(user_id)
     embed = discord.Embed(title="🎰 Roulette - Paris en cours", color=discord.Color.gold())
     embed.add_field(name="Mise", value=f"${mise} par joueur", inline=False)
     paris_list = []
@@ -787,7 +779,7 @@ async def help(interaction: discord.Interaction):
 
 @client.event
 async def on_ready():
-    init_db()  # Crée la table PostgreSQL au démarrage
+    init_db()
     await tree.sync()
     print(f"Bot connecté : {client.user}")
 
