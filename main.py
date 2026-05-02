@@ -37,14 +37,16 @@ roulette_games = {}
 # un service PostgreSQL à ton projet Railway.
 
 def get_conn():
+    host = os.environ["PGHOST"]
+    print(f"DEBUG PGHOST='{host}'")  # On verra la valeur dans les logs
     return psycopg2.connect(
-        host=os.environ["PGHOST"],
+        host=host,
         port=os.environ["PGPORT"],
         dbname=os.environ["PGDATABASE"],
         user=os.environ["PGUSER"],
         password=os.environ["PGPASSWORD"],
     )
-
+    
 def init_db():
     """Crée la table bank si elle n'existe pas encore."""
     with get_conn() as conn:
