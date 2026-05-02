@@ -37,8 +37,11 @@ roulette_games = {}
 # un service PostgreSQL à ton projet Railway.
 
 def get_conn():
-    """Ouvre une connexion PostgreSQL à partir de DATABASE_URL."""
-    return psycopg2.connect(os.environ["DATABASE_URL"], sslmode="require")
+    url = os.environ["DATABASE_URL"]
+    # Railway utilise parfois "postgres://" au lieu de "postgresql://"
+    if url.startswith("postgres://"):
+        url = url.replace("postgres://", "postgresql://", 1)
+    return psycopg2.connect(url)
 
 def init_db():
     """Crée la table bank si elle n'existe pas encore."""
