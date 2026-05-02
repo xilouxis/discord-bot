@@ -1,13 +1,15 @@
 import discord
 import os
-import random
 import aiohttp
-import sqlite3
+import psycopg2
+import psycopg2.extras
 import secrets
 from discord.ui import View, Button
-from dotenv import load_dotenv
 
-load_dotenv()
+# Railway injecte les variables d'environnement directement — pas besoin de dotenv
+# Si tu testes en local, crée un fichier .env et décommente les 2 lignes suivantes :
+# from dotenv import load_dotenv
+# load_dotenv()
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -30,30 +32,49 @@ blackjack_multi_games = {}
 bus_games = {}
 roulette_games = {}
 
-# =================== BASE DE DONNÉES ===================
+# =================== BASE DE DONNÉES (PostgreSQL) ===================
+# Railway fournit la variable DATABASE_URL automatiquement quand tu ajoutes
+# un service PostgreSQL à ton projet Railway.
 
-conn = sqlite3.connect("bank.db")
-cursor = conn.cursor()
-cursor.execute("""
-    CREATE TABLE IF NOT EXISTS bank (
-        user_id TEXT PRIMARY KEY,
-        solde INTEGER DEFAULT 0
-    )
-""")
-conn.commit()
+def get_conn():
+    """Ouvre une connexion PostgreSQL à partir de DATABASE_URL."""
+    return psycopg2.connect(os.environ["DATABASE_URL"], sslmode="require")
+
+def init_db():
+    """Crée la table bank si elle n'existe pas encore."""
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS bank (
+                    user_id TEXT PRIMARY KEY,
+                    solde   INTEGER DEFAULT 0
+                )
+            """)
+        conn.commit()
 
 def get_solde(user_id):
-    cursor.execute("SELECT solde FROM bank WHERE user_id = ?", (str(user_id),))
-    row = cursor.fetchone()
-    if not row:
-        cursor.execute("INSERT INTO bank (user_id, solde) VALUES (?, 0)", (str(user_id),))
-        conn.commit()
-        return 0
-    return row[0]
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT solde FROM bank WHERE user_id = %s", (str(user_id),))
+            row = cur.fetchone()
+            if not row:
+                cur.execute(
+                    "INSERT INTO bank (user_id, solde) VALUES (%s, 0) ON CONFLICT DO NOTHING",
+                    (str(user_id),)
+                )
+                conn.commit()
+                return 0
+            return row[0]
 
 def set_solde(user_id, montant):
-    cursor.execute("INSERT OR REPLACE INTO bank (user_id, solde) VALUES (?, ?)", (str(user_id), montant))
-    conn.commit()
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO bank (user_id, solde) VALUES (%s, %s) "
+                "ON CONFLICT (user_id) DO UPDATE SET solde = EXCLUDED.solde",
+                (str(user_id), montant)
+            )
+        conn.commit()
 
 def add_solde(user_id, montant):
     solde = get_solde(user_id)
@@ -690,8 +711,10 @@ async def solde(interaction: discord.Interaction, membre: discord.Member = None)
 
 @tree.command(name="richesse", description="Top 10 des plus riches du serveur !")
 async def richesse(interaction: discord.Interaction):
-    cursor.execute("SELECT user_id, solde FROM bank ORDER BY solde DESC LIMIT 10")
-    rows = cursor.fetchall()
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT user_id, solde FROM bank ORDER BY solde DESC LIMIT 10")
+            rows = cur.fetchall()
     embed = discord.Embed(title="💰 Top 10 des plus riches", color=discord.Color.gold())
     for i, (user_id, s) in enumerate(rows):
         member = interaction.guild.get_member(int(user_id))
@@ -760,8 +783,11 @@ async def help(interaction: discord.Interaction):
     embed.add_field(name="😂 /dadjoke", value="Envoie un dad joke", inline=False)
     await interaction.response.send_message(embed=embed)
 
+# =================== EVENTS ===================
+
 @client.event
 async def on_ready():
+    init_db()  # Crée la table PostgreSQL au démarrage
     await tree.sync()
     print(f"Bot connecté : {client.user}")
 
