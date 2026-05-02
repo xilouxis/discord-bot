@@ -296,9 +296,9 @@ def valeur_carte(carte):
     else:
         return int(carte)
 
-def est_haut(carte):
+def est_haut(carte, carte_precedente):
     ordre = ["2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K", "A"]
-    return ordre.index(carte) >= 6
+    return ordre.index(carte) > ordre.index(carte_precedente)
 
 class BusEtape1View(View):
     def __init__(self, user_id):
@@ -417,7 +417,9 @@ async def bus_etape2(interaction, user_id, choix):
         return
     game = bus_games[user_id]
     nouvelle = nouvelle_carte()
-    gagne = (choix == "haut" and est_haut(nouvelle)) or (choix == "bas" and not est_haut(nouvelle))
+    carte_precedente = game["cartes"][-2]  # la carte de l'étape 1
+gagne = (choix == "haut" and est_haut(nouvelle, carte_precedente)) or \
+        (choix == "bas" and not est_haut(nouvelle, carte_precedente))
     game["cartes"].append(nouvelle)
     if not gagne:
         del bus_games[user_id]
