@@ -936,19 +936,16 @@ class PokerShowdownView(View):
 
 CHEVAUX = ["🐴 Éclair", "🐴 Tonnerre", "🐴 Tempête", "🐴 Rafale", "🐴 Foudre", "🐴 Mistral"]
 
-class HorseJoinView(View):
-    def __init__(self, game_id):
-        super().__init__(timeout=60)
+class HorseSelect(Select):
+    def __init__(self, game_id, mise):
         self.game_id = game_id
-        # Ajouter un select pour choisir le cheval
-        select = Select(
+        self.mise = mise
+        super().__init__(
             placeholder="Choisis ton cheval et ta mise...",
             options=[SelectOption(label=cheval, value=str(i)) for i, cheval in enumerate(CHEVAUX)]
         )
-        select.callback = self.choisir_cheval
-        self.add_item(select)
 
-    async def choisir_cheval(self, interaction: discord.Interaction):
+    async def callback(self, interaction: discord.Interaction):
         game = horse_games.get(self.game_id)
         if not game:
             await interaction.response.send_message("❌ Course introuvable !", ephemeral=True)
@@ -957,7 +954,7 @@ class HorseJoinView(View):
         if user_id in game["paris"]:
             await interaction.response.send_message("❌ Tu as déjà parié !", ephemeral=True)
             return
-        idx_cheval = int(self.children[0].values[0])
+        idx_cheval = int(self.values[0])
         mise = game["mise"]
         solde = get_solde(user_id)
         if solde < mise:
@@ -966,7 +963,6 @@ class HorseJoinView(View):
         add_solde(user_id, -mise)
         game["paris"][user_id] = idx_cheval
         member = interaction.guild.get_member(user_id)
-        name = member.display_name if member else str(user_id)
         paris_list = []
         for uid, idx in game["paris"].items():
             m = interaction.guild.get_member(uid)
@@ -977,7 +973,52 @@ class HorseJoinView(View):
         embed.add_field(name="🐴 Chevaux disponibles", value="\n".join(CHEVAUX), inline=False)
         embed.add_field(name="Paris", value="\n".join(paris_list) if paris_list else "Aucun pari encore", inline=False)
         embed.set_footer(text="L'hôte lance la course quand tout le monde a parié !")
-        await interaction.response.edit_message(embed=embed, view=self)
+        await interaction.response.edit_message(embed=embed, view=self.view)
+
+class HorseSelect(Select):
+    def __init__(self, game_id, mise):
+        self.game_id = game_id
+        self.mise = mise
+        super().__init__(
+            placeholder="Choisis ton cheval et ta mise...",
+            options=[SelectOption(label=cheval, value=str(i)) for i, cheval in enumerate(CHEVAUX)]
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+        game = horse_games.get(self.game_id)
+        if not game:
+            await interaction.response.send_message("❌ Course introuvable !", ephemeral=True)
+            return
+        user_id = interaction.user.id
+        if user_id in game["paris"]:
+            await interaction.response.send_message("❌ Tu as déjà parié !", ephemeral=True)
+            return
+        idx_cheval = int(self.values[0])
+        mise = game["mise"]
+        solde = get_solde(user_id)
+        if solde < mise:
+            await interaction.response.send_message(f"❌ Pas assez d'argent ! Solde: ${solde:.2f}", ephemeral=True)
+            return
+        add_solde(user_id, -mise)
+        game["paris"][user_id] = idx_cheval
+        member = interaction.guild.get_member(user_id)
+        paris_list = []
+        for uid, idx in game["paris"].items():
+            m = interaction.guild.get_member(uid)
+            n = m.display_name if m else str(uid)
+            paris_list.append(f"{n} → {CHEVAUX[idx]}")
+        embed = discord.Embed(title="🏇 Course de chevaux - Paris ouverts !", color=discord.Color.orange())
+        embed.add_field(name="💰 Mise", value=f"${mise} par joueur", inline=False)
+        embed.add_field(name="🐴 Chevaux disponibles", value="\n".join(CHEVAUX), inline=False)
+        embed.add_field(name="Paris", value="\n".join(paris_list) if paris_list else "Aucun pari encore", inline=False)
+        embed.set_footer(text="L'hôte lance la course quand tout le monde a parié !")
+        await interaction.response.edit_message(embed=embed, view=self.view)
+
+class HorseJoinView(View):
+    def __init__(self, game_id, mise):
+        super().__init__(timeout=60)
+        self.game_id = game_id
+        self.add_item(HorseSelect(game_id, mise))
 
     @discord.ui.button(label="🏁 Lancer la course !", style=discord.ButtonStyle.green, row=1)
     async def lancer(self, interaction: discord.Interaction, button: Button):
@@ -1189,7 +1230,7 @@ async def course(interaction: discord.Interaction, mise: int):
     horse_games[game_id] = {"host": interaction.user.id, "mise": mise, "paris": {}}
     embed = discord.Embed(title="🏇 Course de chevaux !", description=f"Mise : **${mise}** par joueur\nChoisis ton cheval dans le menu !\nL'hôte lance quand tout le monde a parié.", color=discord.Color.orange())
     embed.add_field(name="🐴 Chevaux", value="\n".join(CHEVAUX), inline=False)
-    await interaction.response.send_message(embed=embed, view=HorseJoinView(game_id))
+    await interaction.response.send_message(embed=embed, view=HorseJoinView(game_id, mise))
 
 @tree.command(name="solde", description="Affiche ton solde !")
 async def solde(interaction: discord.Interaction, membre: discord.Member = None):
