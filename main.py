@@ -1298,6 +1298,58 @@ async def dadjoke(interaction: discord.Interaction):
     embed = discord.Embed(description=f"😂 {joke}", color=discord.Color.yellow())
     await interaction.response.send_message(embed=embed)
 
+@tree.command(name="instructions", description="Affiche les instructions d'un jeu !")
+@discord.app_commands.describe(jeu="Le jeu dont tu veux les instructions")
+@discord.app_commands.choices(jeu=[
+    discord.app_commands.Choice(name="Blackjack", value="blackjack"),
+    discord.app_commands.Choice(name="Roulette", value="roulette"),
+    discord.app_commands.Choice(name="Ride the Bus", value="ridethebus"),
+    discord.app_commands.Choice(name="Slots", value="slots"),
+    discord.app_commands.Choice(name="Poker", value="poker"),
+    discord.app_commands.Choice(name="Course de chevaux", value="course"),
+])
+async def instructions(interaction: discord.Interaction, jeu: str):
+    embeds = {
+        "blackjack": discord.Embed(title="🃏 Instructions - Blackjack", color=discord.Color.green())
+            .add_field(name="But", value="Avoir une main la plus proche de 21 sans dépasser !", inline=False)
+            .add_field(name="Comment jouer", value="• `/blackjack [mise]` pour jouer solo\n• `/blackjack2 [mise] [membre]` pour jouer contre quelqu'un", inline=False)
+            .add_field(name="Cartes", value="• J/Q/K = 10 points\n• As = 1 ou 11 points\n• Autres = valeur nominale", inline=False)
+            .add_field(name="Actions", value="• **Hit** = Prendre une carte\n• **Stand** = Rester avec ta main", inline=False)
+            .add_field(name="Gains", value="• Gagné = mise x2\n• Égalité = mise remboursée\n• Perdu = mise perdue", inline=False),
+
+        "roulette": discord.Embed(title="🎰 Instructions - Roulette", color=discord.Color.gold())
+            .add_field(name="But", value="Parier sur la bonne couleur ou parité du numéro !", inline=False)
+            .add_field(name="Comment jouer", value="• `/roulette [mise]` pour lancer une partie\n• Tout le monde parie, l'hôte lance", inline=False)
+            .add_field(name="Paris disponibles", value="• **Rouge** = numéros rouges\n• **Noir** = numéros noirs\n• **Pair** = numéros pairs\n• **Impair** = numéros impairs", inline=False)
+            .add_field(name="Gains", value="• Gagné = mise x2\n• Perdu = mise perdue\n• 0 = tout le monde perd", inline=False),
+
+        "ridethebus": discord.Embed(title="🚌 Instructions - Ride the Bus", color=discord.Color.purple())
+            .add_field(name="But", value="Survivre aux 4 étapes pour multiplier ta mise !", inline=False)
+            .add_field(name="Comment jouer", value="• `/ridethebus [mise]` pour commencer", inline=False)
+            .add_field(name="Étapes", value="• **Étape 1** = Rouge ou Noir ?\n• **Étape 2** = Plus haute ou plus basse ?\n• **Étape 3** = Inside ou Outside ?\n• **Étape 4** = Quelle couleur (♠️♥️♦️♣️) ?", inline=False)
+            .add_field(name="Gains", value="• Chaque bonne réponse = gains x1.5\n• Étape 4 réussie = gains x2\n• Cash Out à tout moment pour sécuriser tes gains !", inline=False),
+
+        "slots": discord.Embed(title="🎰 Instructions - Slots", color=discord.Color.gold())
+            .add_field(name="But", value="Aligner des symboles identiques pour gagner !", inline=False)
+            .add_field(name="Comment jouer", value="• `/slots [mise]` pour lancer", inline=False)
+            .add_field(name="Gains", value="• 3x 💎 = mise x10 (Jackpot Diamant !)\n• 3x 7️⃣ = mise x5 (Triple 7 !)\n• 3x autre = mise x3 (Jackpot !)\n• 2 identiques = mise remboursée\n• Rien = mise perdue", inline=False),
+
+        "poker": discord.Embed(title="🃏 Instructions - Poker Texas Hold'em", color=discord.Color.green())
+            .add_field(name="But", value="Avoir la meilleure main de 5 cartes parmi les 7 disponibles !", inline=False)
+            .add_field(name="Comment jouer", value="• `/poker [mise]` pour créer une partie (2-6 joueurs)\n• Les joueurs rejoignent, l'hôte lance\n• Les cartes privées sont envoyées en DM !", inline=False)
+            .add_field(name="Phases", value="• **Preflop** = Cartes privées distribuées\n• **Flop** = 3 cartes communes\n• **Turn** = 4ème carte commune\n• **River** = 5ème carte commune\n• **Showdown** = Révélation des mains", inline=False)
+            .add_field(name="Hiérarchie des mains", value="1. Carte haute\n2. Paire\n3. Double paire\n4. Brelan\n5. Suite\n6. Couleur\n7. Full house\n8. Carré\n9. Quinte flush\n10. Quinte flush royale 👑", inline=False)
+            .add_field(name="Gains", value="• Le pot est divisé entre les gagnants si égalité", inline=False),
+
+        "course": discord.Embed(title="🏇 Instructions - Course de chevaux", color=discord.Color.orange())
+            .add_field(name="But", value="Parier sur le bon cheval pour gagner le pot !", inline=False)
+            .add_field(name="Comment jouer", value="• `/course [mise]` pour créer une course\n• Chaque joueur choisit son cheval dans le menu\n• L'hôte lance la course", inline=False)
+            .add_field(name="Chevaux", value="\n".join(CHEVAUX), inline=False)
+            .add_field(name="Gains", value="• Le pot total est divisé entre ceux qui ont misé sur le gagnant\n• Perdu = mise perdue", inline=False),
+    }
+
+    await interaction.response.send_message(embed=embeds[jeu])
+
 @tree.command(name="help", description="Affiche toutes les commandes du bot !")
 async def help(interaction: discord.Interaction):
     embed = discord.Embed(title="📖 Commandes du bot", color=discord.Color.blue())
@@ -1314,6 +1366,7 @@ async def help(interaction: discord.Interaction):
     embed.add_field(name="🎲 /de [faces]", value="Lance un dé", inline=False)
     embed.add_field(name="🎮 /steam [jeu]", value="Cherche un jeu sur Steam", inline=False)
     embed.add_field(name="😂 /dadjoke", value="Envoie un dad joke", inline=False)
+    embed.add_field(name="❓ /instructions [jeu]", value="Instructions d'un jeu", inline=False)
     embed.set_footer(text=f"💵 +${SALAIRE_MESSAGE}/message • 📊 +${REWARD_SONDAGE_CREATEUR} créer sondage • ✅ +${REWARD_SONDAGE_REPONSE} répondre • 💰 +${SALAIRE_HEBDO}$/semaine")
     await interaction.response.send_message(embed=embed)
 
