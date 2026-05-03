@@ -1280,7 +1280,9 @@ async def help(interaction: discord.Interaction):
 @client.event
 async def on_ready():
     init_db()
-    guild = discord.Object(id=1458933425460482164)  # remplace par l'ID de ton serveur Discord
+    tree.clear_commands(guild=None)  # supprime les commandes globales
+    await tree.sync()  # sync le vide (efface sur Discord)
+    guild = discord.Object(id=1458933425460482164)
     tree.copy_global_to(guild=guild)
     await tree.sync(guild=guild)
     client.loop.create_task(salaire_hebdomadaire())
