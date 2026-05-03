@@ -1223,14 +1223,15 @@ async def poker(interaction: discord.Interaction, mise: int):
 @tree.command(name="course", description="Lance une course de chevaux multijoueur !")
 @discord.app_commands.describe(mise="Mise par joueur")
 async def course(interaction: discord.Interaction, mise: int):
+    await interaction.response.defer()
     if mise <= 0:
-        await interaction.response.send_message("❌ La mise doit être positive !", ephemeral=True)
+        await interaction.followup.send("❌ La mise doit être positive !", ephemeral=True)
         return
     game_id = secrets.token_hex(8)
     horse_games[game_id] = {"host": interaction.user.id, "mise": mise, "paris": {}}
     embed = discord.Embed(title="🏇 Course de chevaux !", description=f"Mise : **${mise}** par joueur\nChoisis ton cheval dans le menu !\nL'hôte lance quand tout le monde a parié.", color=discord.Color.orange())
     embed.add_field(name="🐴 Chevaux", value="\n".join(CHEVAUX), inline=False)
-    await interaction.response.send_message(embed=embed, view=HorseJoinView(game_id, mise))
+    await interaction.followup.send(embed=embed, view=HorseJoinView(game_id, mise))
 
 @tree.command(name="solde", description="Affiche ton solde !")
 async def solde(interaction: discord.Interaction, membre: discord.Member = None):
