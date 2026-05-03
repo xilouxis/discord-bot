@@ -1306,23 +1306,25 @@ async def steamgratuit(interaction: discord.Interaction):
     await interaction.response.defer()
     async with aiohttp.ClientSession() as session:
         async with session.get(
-            "https://store.steampowered.com/search/results/?query&start=0&count=50&dynamic_data=&sort_by=_ASC&specials=1&filters=special&json=1",
-            headers={"Accept-Language": "fr-CA"}
+            "https://store.steampowered.com/search/results/",
+            params={
+                "specials": "1",
+                "maxprice": "free",
+                "json": "1",
+                "count": "50"
+            },
+            headers={"User-Agent": "Mozilla/5.0"}
         ) as resp:
             data = await resp.json(content_type=None)
 
     embed = discord.Embed(title="🎮 Jeux gratuits à 100% sur Steam !", color=discord.Color.blue())
     found = 0
     for item in data.get("items", []):
-        original = item.get("original_price", 1)
-        final = item.get("final_price", 1)
-        discount = item.get("discount_percent", 0)
-        if discount == 100 or final == 0 and original > 0:
-            nom = item.get("name", "Inconnu")
-            app_id = item.get("id")
-            lien = f"https://store.steampowered.com/app/{app_id}"
-            embed.add_field(name=f"🎁 {nom}", value=f"[Voir sur Steam]({lien})", inline=False)
-            found += 1
+        nom = item.get("name", "Inconnu")
+        app_id = item.get("id")
+        lien = f"https://store.steampowered.com/app/{app_id}"
+        embed.add_field(name=f"🎁 {nom}", value=f"[Voir sur Steam]({lien})", inline=False)
+        found += 1
 
     if found == 0:
         embed.description = "😢 Aucun jeu gratuit à 100% trouvé en ce moment !"
