@@ -1279,10 +1279,13 @@ async def help(interaction: discord.Interaction):
 
 @client.event
 async def on_ready():
+    print("on_ready démarré")
     init_db()
+    print("db initialisée")
     try:
         guild = discord.Object(id=1458933425460482164)
         tree.copy_global_to(guild=guild)
+        print("copy_global_to fait")
         await tree.sync(guild=guild)
         print(f"Commandes syncées : {[cmd.name for cmd in tree.get_commands()]}")
     except Exception as e:
