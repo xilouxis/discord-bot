@@ -1306,20 +1306,27 @@ async def steamgratuit(interaction: discord.Interaction):
     await interaction.response.defer()
     async with aiohttp.ClientSession() as session:
         async with session.get(
-            "https://store.steampowered.com/search/results/?query&start=0&count=50&dynamic_data=&sort_by=_ASC&specials=1&json=1"
+            "https://store.steampowered.com/search/results/?query&start=0&count=50&dynamic_data=&sort_by=_ASC&specials=1&filters=special&json=1",
+            headers={"Accept-Language": "fr-CA"}
         ) as resp:
-            data = await resp.json()
+            data = await resp.json(content_type=None)
+
     embed = discord.Embed(title="🎮 Jeux gratuits à 100% sur Steam !", color=discord.Color.blue())
     found = 0
     for item in data.get("items", []):
-        if item.get("discount_percent") == 100:
+        original = item.get("original_price", 1)
+        final = item.get("final_price", 1)
+        discount = item.get("discount_percent", 0)
+        if discount == 100 or final == 0 and original > 0:
             nom = item.get("name", "Inconnu")
             app_id = item.get("id")
             lien = f"https://store.steampowered.com/app/{app_id}"
             embed.add_field(name=f"🎁 {nom}", value=f"[Voir sur Steam]({lien})", inline=False)
             found += 1
+
     if found == 0:
         embed.description = "😢 Aucun jeu gratuit à 100% trouvé en ce moment !"
+
     await interaction.followup.send(embed=embed)
 
 @tree.command(name="pileouface", description="Lance une pièce !")
