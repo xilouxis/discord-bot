@@ -1280,10 +1280,12 @@ async def help(interaction: discord.Interaction):
 @client.event
 async def on_ready():
     init_db()
-    await tree.sync()
+    guild = discord.Object(id=1234567890)  # remplace par l'ID de ton serveur Discord
+    tree.copy_global_to(guild=guild)
+    await tree.sync(guild=guild)
     client.loop.create_task(salaire_hebdomadaire())
     print(f"Bot connecté : {client.user}")
-
+    
 @client.event
 async def on_member_join(member):
     role = member.guild.get_role(ROLE_MEMBRE_ID)
