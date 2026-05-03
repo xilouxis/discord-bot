@@ -1280,9 +1280,13 @@ async def help(interaction: discord.Interaction):
 @client.event
 async def on_ready():
     init_db()
-    guild = discord.Object(id=1458933425460482164)
-    tree.copy_global_to(guild=guild)
-    await tree.sync(guild=guild)
+    try:
+        guild = discord.Object(id=1458933425460482164)
+        tree.copy_global_to(guild=guild)
+        await tree.sync(guild=guild)
+        print(f"Commandes syncées : {[cmd.name for cmd in tree.get_commands()]}")
+    except Exception as e:
+        print(f"Erreur sync : {e}")
     client.loop.create_task(salaire_hebdomadaire())
     print(f"Bot connecté : {client.user}")
     
