@@ -3,6 +3,7 @@ import os
 import aiohttp
 import psycopg2
 import secrets
+import asyncio
 from discord.ui import View, Button
 
 intents = discord.Intents.default()
@@ -20,6 +21,9 @@ MESSAGE_ID_2 = 1499587568856203295
 ROLE_POLES_ID = 1499196527728398437
 ROLE_MEMBRE_ID = 1459044281368182884
 ROLE_2_ID = 1499581112983359549
+
+SALAIRE_HEBDO = 100
+SALAIRE_MESSAGE = 1
 
 blackjack_games = {}
 blackjack_multi_games = {}
@@ -73,6 +77,23 @@ def add_solde(user_id, montant):
     solde = get_solde(user_id)
     set_solde(user_id, solde + montant)
 
+def get_all_users():
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT user_id FROM bank")
+            return [row[0] for row in cur.fetchall()]
+
+# =================== SALAIRE HEBDOMADAIRE ===================
+
+async def salaire_hebdomadaire():
+    await client.wait_until_ready()
+    while not client.is_closed():
+        await asyncio.sleep(7 * 24 * 3600)  # 7 jours
+        users = get_all_users()
+        for user_id in users:
+            add_solde(user_id, SALAIRE_HEBDO)
+        print(f"Salaire hebdomadaire de ${SALAIRE_HEBDO} distribué à {len(users)} utilisateurs.")
+
 # =================== CARTES ===================
 
 def nouvelle_carte():
@@ -99,7 +120,9 @@ def afficher_main(main):
     return " | ".join(main)
 
 def resultat_bj(total_joueur, total_bot, mise, user_id):
-    if total_bot > 21 or total_joueur > total_bot:
+    if total_joueur > 21:
+        return f"😢 Bust ! -${mise}", discord.Color.red()
+    elif total_bot > 21 or total_joueur > total_bot:
         add_solde(user_id, mise * 2)
         return f"🎉 Gagné ! +${mise}", discord.Color.green()
     elif total_joueur == total_bot:
@@ -238,7 +261,7 @@ class BlackjackMultiView(View):
             total_joueur = valeur_main(data["main"])
             msg, _ = resultat_bj(total_joueur, total_bot, data["mise"], uid)
             embed.add_field(
-                name=f"{name}",
+                name=name,
                 value=f"{afficher_main(data['main'])} → **{total_joueur}**\n{msg}\n💰 Solde: ${get_solde(uid)}",
                 inline=False
             )
@@ -281,10 +304,10 @@ class JoinBlackjackView(View):
 # =================== RIDE THE BUS ===================
 
 COULEURS_BUS = ["♠️ Pique", "♥️ Coeur", "♦️ Carreau", "♣️ Trèfle"]
+ORDRE_CARTES = ["2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K", "A"]
 
 def nouvelle_carte_complete():
-    cartes = ["2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K", "A"]
-    carte = cartes[secrets.randbelow(len(cartes))]
+    carte = ORDRE_CARTES[secrets.randbelow(len(ORDRE_CARTES))]
     couleur = COULEURS_BUS[secrets.randbelow(len(COULEURS_BUS))]
     return carte, couleur
 
@@ -296,9 +319,11 @@ def valeur_carte(carte):
     else:
         return int(carte)
 
-def est_haut(carte):
-    ordre = ["2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K", "A"]
-    return ordre.index(carte) >= 6
+def est_plus_haut(nouvelle, precedente):
+    return ORDRE_CARTES.index(nouvelle) > ORDRE_CARTES.index(precedente)
+
+def est_plus_bas(nouvelle, precedente):
+    return ORDRE_CARTES.index(nouvelle) < ORDRE_CARTES.index(precedente)
 
 class BusEtape1View(View):
     def __init__(self, user_id):
@@ -393,20 +418,20 @@ async def bus_etape1(interaction, user_id, choix):
         await interaction.response.send_message("❌ C'est pas ta partie !", ephemeral=True)
         return
     game = bus_games[user_id]
-    nouvelle = nouvelle_carte()
-    couleur = ["rouge", "noir"][secrets.randbelow(2)]
+    nouvelle, couleur_carte = nouvelle_carte_complete()
+    couleur = "rouge" if couleur_carte in ["♥️ Coeur", "♦️ Carreau"] else "noir"
     gagne = choix == couleur
     game["cartes"].append(nouvelle)
     if not gagne:
         del bus_games[user_id]
-        embed = discord.Embed(title="🚌 Ride the Bus - Perdu !", description=f"La carte était **{nouvelle}** ({couleur})\n\n😢 **Tu perds ta mise !**", color=discord.Color.red())
+        embed = discord.Embed(title="🚌 Ride the Bus - Perdu !", description=f"La carte était **{nouvelle} {couleur_carte}** ({couleur})\n\n😢 **Tu perds ta mise !**", color=discord.Color.red())
         embed.add_field(name="💰 Solde", value=f"${get_solde(user_id)}", inline=False)
         await interaction.response.edit_message(embed=embed, view=None)
     else:
         game["gains"] = int(game["gains"] * 1.5)
         bus_games[user_id]["etape"] = 2
         embed = discord.Embed(title="🚌 Ride the Bus", color=discord.Color.purple())
-        embed.add_field(name="✅ Bonne réponse !", value=f"La carte était **{nouvelle}** ({couleur})", inline=False)
+        embed.add_field(name="✅ Bonne réponse !", value=f"La carte était **{nouvelle} {couleur_carte}** ({couleur})", inline=False)
         embed.add_field(name="💰 Gains actuels", value=f"${game['gains']}", inline=False)
         embed.add_field(name="Étape 2", value=f"La prochaine carte sera **plus haute** ou **plus basse** que **{nouvelle}** ?", inline=False)
         await interaction.response.edit_message(embed=embed, view=BusEtape2View(user_id))
@@ -416,12 +441,22 @@ async def bus_etape2(interaction, user_id, choix):
         await interaction.response.send_message("❌ C'est pas ta partie !", ephemeral=True)
         return
     game = bus_games[user_id]
-    nouvelle = nouvelle_carte()
-    gagne = (choix == "haut" and est_haut(nouvelle)) or (choix == "bas" and not est_haut(nouvelle))
+    carte_precedente = game["cartes"][-1]
+    nouvelle, couleur_carte = nouvelle_carte_complete()
     game["cartes"].append(nouvelle)
+    # Égalité — rejouer
+    if nouvelle == carte_precedente:
+        embed = discord.Embed(title="🚌 Ride the Bus", color=discord.Color.purple())
+        embed.add_field(name="↔️ Égalité !", value=f"La carte était **{nouvelle} {couleur_carte}**, même valeur ! Rejoue.", inline=False)
+        embed.add_field(name="💰 Gains actuels", value=f"${game['gains']}", inline=False)
+        embed.add_field(name="Étape 2", value=f"La prochaine carte sera **plus haute** ou **plus basse** que **{nouvelle}** ?", inline=False)
+        await interaction.response.edit_message(embed=embed, view=BusEtape2View(user_id))
+        return
+    gagne = (choix == "haut" and est_plus_haut(nouvelle, carte_precedente)) or \
+            (choix == "bas" and est_plus_bas(nouvelle, carte_precedente))
     if not gagne:
         del bus_games[user_id]
-        embed = discord.Embed(title="🚌 Ride the Bus - Perdu !", description=f"La carte était **{nouvelle}**\n\n😢 **Tu perds ta mise !**", color=discord.Color.red())
+        embed = discord.Embed(title="🚌 Ride the Bus - Perdu !", description=f"La carte était **{nouvelle} {couleur_carte}**\n\n😢 **Tu perds ta mise !**", color=discord.Color.red())
         embed.add_field(name="💰 Solde", value=f"${get_solde(user_id)}", inline=False)
         await interaction.response.edit_message(embed=embed, view=None)
     else:
@@ -431,10 +466,10 @@ async def bus_etape2(interaction, user_id, choix):
         c2 = game["cartes"][-1]
         vals = sorted([valeur_carte(c1), valeur_carte(c2)])
         embed = discord.Embed(title="🚌 Ride the Bus", color=discord.Color.purple())
-        embed.add_field(name="✅ Bonne réponse !", value=f"La carte était **{nouvelle}**", inline=False)
+        embed.add_field(name="✅ Bonne réponse !", value=f"La carte était **{nouvelle} {couleur_carte}**", inline=False)
         embed.add_field(name="💰 Gains actuels", value=f"${game['gains']}", inline=False)
         embed.add_field(name="Tes 2 dernières cartes", value=f"**{c1}** et **{c2}** (valeurs {vals[0]} et {vals[1]})", inline=False)
-        embed.add_field(name="Étape 3", value="La prochaine carte sera **Inside** 🎯 ou **Outside** 💨 ?", inline=False)
+        embed.add_field(name="Étape 3", value="La prochaine carte sera **Inside** 🎯 (entre les deux) ou **Outside** 💨 (en dehors) ?", inline=False)
         await interaction.response.edit_message(embed=embed, view=BusEtape3View(user_id))
 
 async def bus_etape3(interaction, user_id, choix):
@@ -442,24 +477,39 @@ async def bus_etape3(interaction, user_id, choix):
         await interaction.response.send_message("❌ C'est pas ta partie !", ephemeral=True)
         return
     game = bus_games[user_id]
-    nouvelle = nouvelle_carte()
-    vals = sorted([valeur_carte(c) for c in game["cartes"][-2:]])
-    val_nouvelle = valeur_carte(nouvelle)
-    gagne = (choix == "inside" and vals[0] < val_nouvelle < vals[1]) or \
-            (choix == "outside" and (val_nouvelle < vals[0] or val_nouvelle > vals[1]))
+    nouvelle, couleur_carte = nouvelle_carte_complete()
+    idx_c1 = ORDRE_CARTES.index(game["cartes"][-2])
+    idx_c2 = ORDRE_CARTES.index(game["cartes"][-1])
+    vals = sorted([idx_c1, idx_c2])
+    idx_nouvelle = ORDRE_CARTES.index(nouvelle)
+    # Égalité sur la bordure — rejouer
+    if idx_nouvelle == vals[0] or idx_nouvelle == vals[1]:
+        game["cartes"].append(nouvelle)
+        c1 = game["cartes"][-3]
+        c2 = game["cartes"][-2]
+        v = sorted([valeur_carte(c1), valeur_carte(c2)])
+        embed = discord.Embed(title="🚌 Ride the Bus", color=discord.Color.purple())
+        embed.add_field(name="↔️ Égalité !", value=f"La carte était **{nouvelle} {couleur_carte}**, exactement sur la bordure ! Rejoue.", inline=False)
+        embed.add_field(name="💰 Gains actuels", value=f"${game['gains']}", inline=False)
+        embed.add_field(name="Tes 2 cartes", value=f"**{c1}** et **{c2}** (valeurs {v[0]} et {v[1]})", inline=False)
+        embed.add_field(name="Étape 3", value="**Inside** 🎯 ou **Outside** 💨 ?", inline=False)
+        await interaction.response.edit_message(embed=embed, view=BusEtape3View(user_id))
+        return
+    gagne = (choix == "inside" and vals[0] < idx_nouvelle < vals[1]) or \
+            (choix == "outside" and (idx_nouvelle < vals[0] or idx_nouvelle > vals[1]))
     game["cartes"].append(nouvelle)
     if not gagne:
         del bus_games[user_id]
-        embed = discord.Embed(title="🚌 Ride the Bus - Perdu !", description=f"La carte était **{nouvelle}**\n\n😢 **Tu perds ta mise !**", color=discord.Color.red())
+        embed = discord.Embed(title="🚌 Ride the Bus - Perdu !", description=f"La carte était **{nouvelle} {couleur_carte}**\n\n😢 **Tu perds ta mise !**", color=discord.Color.red())
         embed.add_field(name="💰 Solde", value=f"${get_solde(user_id)}", inline=False)
         await interaction.response.edit_message(embed=embed, view=None)
     else:
         game["gains"] = int(game["gains"] * 1.5)
         bus_games[user_id]["etape"] = 4
         embed = discord.Embed(title="🚌 Ride the Bus", color=discord.Color.purple())
-        embed.add_field(name="✅ Bonne réponse !", value=f"La carte était **{nouvelle}**", inline=False)
+        embed.add_field(name="✅ Bonne réponse !", value=f"La carte était **{nouvelle} {couleur_carte}**", inline=False)
         embed.add_field(name="💰 Gains actuels", value=f"${game['gains']}", inline=False)
-        embed.add_field(name="Étape 4 - Dernière chance !", value="Devine la **couleur** de la prochaine carte !", inline=False)
+        embed.add_field(name="Étape 4 - Dernière chance !", value="Devine la **couleur** (suit) de la prochaine carte !", inline=False)
         await interaction.response.edit_message(embed=embed, view=BusEtape4View(user_id))
 
 async def bus_etape4(interaction, user_id, choix):
@@ -561,7 +611,6 @@ async def roulette_parier(interaction, game_id, type_pari):
         return
     add_solde(user_id, -mise)
     game["paris"][user_id] = {"type": type_pari, "mise": mise}
-    member = interaction.guild.get_member(user_id)
     embed = discord.Embed(title="🎰 Roulette - Paris en cours", color=discord.Color.gold())
     embed.add_field(name="Mise", value=f"${mise} par joueur", inline=False)
     paris_list = []
@@ -649,10 +698,10 @@ async def ridethebus(interaction: discord.Interaction, mise: int):
         await interaction.response.send_message(f"❌ Pas assez d'argent ! Solde: ${solde}", ephemeral=True)
         return
     add_solde(user_id, -mise)
-    carte = nouvelle_carte()
-    bus_games[user_id] = {"carte": carte, "etape": 1, "cartes": [carte], "gains": mise}
+    carte, couleur_carte = nouvelle_carte_complete()
+    bus_games[user_id] = {"etape": 1, "cartes": [carte], "gains": mise}
     embed = discord.Embed(title="🚌 Ride the Bus", color=discord.Color.purple())
-    embed.add_field(name="Ta carte de départ", value=f"**{carte}**", inline=False)
+    embed.add_field(name="Ta carte de départ", value=f"**{carte} {couleur_carte}**", inline=False)
     embed.add_field(name="💰 Mise", value=f"${mise}", inline=False)
     embed.add_field(name="Étape 1", value="La prochaine carte sera **Rouge** ❤️ ou **Noir** 🖤 ?", inline=False)
     embed.set_footer(text="Cash Out à tout moment pour repartir avec tes gains !")
@@ -773,6 +822,7 @@ async def help(interaction: discord.Interaction):
     embed.add_field(name="🎲 /de [faces]", value="Lance un dé", inline=False)
     embed.add_field(name="🎮 /steam [jeu]", value="Cherche un jeu sur Steam", inline=False)
     embed.add_field(name="😂 /dadjoke", value="Envoie un dad joke", inline=False)
+    embed.set_footer(text=f"💵 +${SALAIRE_MESSAGE} par message • 💰 +${SALAIRE_HEBDO}$ chaque semaine pour tous")
     await interaction.response.send_message(embed=embed)
 
 # =================== EVENTS ===================
@@ -781,6 +831,7 @@ async def help(interaction: discord.Interaction):
 async def on_ready():
     init_db()
     await tree.sync()
+    client.loop.create_task(salaire_hebdomadaire())
     print(f"Bot connecté : {client.user}")
 
 @client.event
@@ -793,7 +844,7 @@ async def on_member_join(member):
 async def on_message(message):
     if message.author == client.user or message.author.bot:
         return
-    add_solde(message.author.id, 4)
+    add_solde(message.author.id, SALAIRE_MESSAGE)
     if message.channel.name == POLES_CHANNEL:
         if message.poll:
             await message.create_thread(name="Discussion du sondage")
