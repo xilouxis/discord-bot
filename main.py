@@ -875,7 +875,7 @@ class PokerPhaseView3(View):
         if not game:
             await interaction.response.send_message("❌ Partie introuvable !", ephemeral=True)
             return
-        if interaction.user.id != game["host"]):
+        if interaction.user.id != game["host"]:
             await interaction.response.send_message("❌ Seul l'hôte peut avancer !", ephemeral=True)
             return
         game["phase"] = "river"
