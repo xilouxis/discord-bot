@@ -25,10 +25,14 @@ ROLE_POLES_ID = 1499196527728398437
 ROLE_MEMBRE_ID = 1459044281368182884
 ROLE_2_ID = 1499581112983359549
 
-SALAIRE_MESSAGE = 0.20
+SALAIRE_MESSAGE = 1
 SALAIRE_HEBDO = 100
 REWARD_SONDAGE_CREATEUR = 30
 REWARD_SONDAGE_REPONSE = 20
+
+DAILY_BASE = 50
+DAILY_MAX_STREAK = 7
+DAILY_MAX_BONUS = 250
 
 blackjack_games = {}
 blackjack_multi_games = {}
@@ -76,6 +80,13 @@ def init_db():
                     parties_gagnees INTEGER DEFAULT 0,
                     gains_totaux REAL DEFAULT 0,
                     pertes_totales REAL DEFAULT 0
+                )
+            """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS daily (
+                    user_id TEXT PRIMARY KEY,
+                    last_claim DATE,
+                    streak INTEGER DEFAULT 0
                 )
             """)
         conn.commit()
@@ -169,6 +180,46 @@ def get_stats(user_id):
                 "gains_totaux": row[3],
                 "pertes_totales": row[4]
             }
+
+def get_daily_info(user_id):
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT last_claim, streak FROM daily WHERE user_id = %s", (str(user_id),))
+            row = cur.fetchone()
+            if not row:
+                return {"last_claim": None, "streak": 0}
+            return {"last_claim": row[0], "streak": row[1]}
+
+def claim_daily(user_id):
+    from datetime import date, timedelta
+    today = date.today()
+    info = get_daily_info(user_id)
+    last = info["last_claim"]
+    streak = info["streak"]
+
+    if last == today:
+        return None, streak, "already"
+
+    # Streak continue si hier
+    yesterday = today - timedelta(days=1)
+    if last == yesterday:
+        new_streak = min(streak + 1, DAILY_MAX_STREAK)
+    else:
+        new_streak = 1
+
+    # Calcul du montant: jour 1=50$, jour 2=70$... jusqu'à jour 7=250$
+    montant = DAILY_BASE + (new_streak - 1) * ((DAILY_MAX_BONUS - DAILY_BASE) // (DAILY_MAX_STREAK - 1))
+
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO daily (user_id, last_claim, streak) VALUES (%s, %s, %s)
+                ON CONFLICT (user_id) DO UPDATE SET last_claim = %s, streak = %s
+            """, (str(user_id), today, new_streak, today, new_streak))
+        conn.commit()
+
+    add_solde(user_id, montant)
+    return montant, new_streak, "ok"
 
 # =================== SALAIRE HEBDOMADAIRE ===================
 
@@ -1552,7 +1603,75 @@ async def instructions(interaction: discord.Interaction, jeu: str):
     }
     await interaction.response.send_message(embed=embeds[jeu])
 
-@tree.command(name="help", description="Affiche toutes les commandes du bot !")
+@tree.command(name="daily", description="Réclame ton bonus quotidien ! (streak jusqu'à 250$/jour)")
+async def daily(interaction: discord.Interaction):
+    user_id = interaction.user.id
+    montant, streak, status = claim_daily(user_id)
+
+    if status == "already":
+        info = get_daily_info(user_id)
+        embed = discord.Embed(title="⏳ Daily déjà réclamé !", color=discord.Color.red())
+        embed.add_field(name="Streak actuel", value=f"🔥 Jour {info['streak']}/{DAILY_MAX_STREAK}", inline=True)
+        embed.add_field(name="Prochain daily", value="Demain !", inline=True)
+        embed.add_field(name="💰 Solde", value=f"${get_solde(user_id):.2f}", inline=False)
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+        return
+
+    # Calcul du prochain montant
+    next_streak = min(streak + 1, DAILY_MAX_STREAK)
+    next_montant = DAILY_BASE + (next_streak - 1) * ((DAILY_MAX_BONUS - DAILY_BASE) // (DAILY_MAX_STREAK - 1))
+
+    # Barre de progression du streak
+    barre = "🔥" * streak + "⬜" * (DAILY_MAX_STREAK - streak)
+
+    embed = discord.Embed(title="🎁 Daily réclamé !", color=discord.Color.gold())
+    embed.add_field(name="Gains", value=f"**+${montant}**", inline=True)
+    embed.add_field(name="Streak", value=f"🔥 Jour {streak}/{DAILY_MAX_STREAK}", inline=True)
+    embed.add_field(name="Progression", value=barre, inline=False)
+    if streak < DAILY_MAX_STREAK:
+        embed.add_field(name="Demain", value=f"**+${next_montant}** si tu reviens !", inline=False)
+    else:
+        embed.add_field(name="Streak MAX !", value=f"🏆 Tu es au maximum — **+${DAILY_MAX_BONUS}**/jour !", inline=False)
+    embed.add_field(name="💰 Solde", value=f"${get_solde(user_id):.2f}", inline=False)
+    await interaction.response.send_message(embed=embed)
+
+@tree.command(name="retirer", description="[Modo] Retire de l'argent à un membre avec un rôle moins important")
+@discord.app_commands.describe(membre="Le membre ciblé", montant="Montant à retirer", raison="Raison du retrait")
+async def retirer(interaction: discord.Interaction, membre: discord.Member, montant: int, raison: str = "Aucune raison fournie"):
+    # Vérifier que l'utilisateur a le rôle admin ou plus
+    role_admin = discord.utils.get(interaction.guild.roles, name="Admins")
+    if role_admin is None:
+        await interaction.response.send_message("❌ Le rôle 'Admins' n'existe pas sur ce serveur !", ephemeral=True)
+        return
+    if interaction.user.top_role < role_admin:
+        await interaction.response.send_message("❌ Tu dois avoir le rôle **Admins** ou supérieur pour utiliser cette commande !", ephemeral=True)
+        return
+    if membre.bot:
+        await interaction.response.send_message("❌ Tu peux pas retirer de l'argent à un bot !", ephemeral=True)
+        return
+    if membre.id == interaction.user.id:
+        await interaction.response.send_message("❌ Tu peux pas te retirer de l'argent à toi-même !", ephemeral=True)
+        return
+    if montant <= 0:
+        await interaction.response.send_message("❌ Le montant doit être positif !", ephemeral=True)
+        return
+    solde_cible = get_solde(membre.id)
+    retrait_reel = min(montant, solde_cible)
+    add_solde(membre.id, -retrait_reel)
+    embed = discord.Embed(title="💸 Retrait effectué par un modérateur", color=discord.Color.red())
+    embed.add_field(name="Modérateur", value=interaction.user.display_name, inline=True)
+    embed.add_field(name="Membre", value=membre.display_name, inline=True)
+    embed.add_field(name="Montant retiré", value=f"${retrait_reel}", inline=True)
+    embed.add_field(name="Raison", value=raison, inline=False)
+    embed.add_field(name=f"Nouveau solde de {membre.display_name}", value=f"${get_solde(membre.id):.2f}", inline=False)
+    await interaction.response.send_message(embed=embed)
+    # Notifier le membre en DM
+    try:
+        await membre.send(f"💸 **{interaction.user.display_name}** t'a retiré **${retrait_reel}**.\nRaison: {raison}\nNouveau solde: ${get_solde(membre.id):.2f}")
+    except:
+        pass
+
+
 async def help(interaction: discord.Interaction):
     embed = discord.Embed(title="📖 Commandes du bot", color=discord.Color.blue())
     embed.add_field(name="🃏 /blackjack [mise]", value="Blackjack solo", inline=False)
@@ -1565,6 +1684,8 @@ async def help(interaction: discord.Interaction):
     embed.add_field(name="💰 /solde", value="Affiche ton solde", inline=False)
     embed.add_field(name="🏆 /richesse", value="Top 10 des plus riches", inline=False)
     embed.add_field(name="💸 /donner [membre] [montant]", value="Donne de l'argent à quelqu'un", inline=False)
+    embed.add_field(name="🎁 /daily", value="Bonus quotidien avec streak (50$ → 250$/jour)", inline=False)
+    embed.add_field(name="🔨 /retirer [membre] [montant]", value="[Modo] Retire de l'argent à un membre", inline=False)
     embed.add_field(name="📊 /stats [membre]", value="Affiche tes statistiques de jeu", inline=False)
     embed.add_field(name="❓ /instructions [jeu]", value="Instructions d'un jeu", inline=False)
     embed.add_field(name="🎁 /steamgratuit", value="Jeux gratuits à 100% sur Steam", inline=False)
@@ -1572,7 +1693,7 @@ async def help(interaction: discord.Interaction):
     embed.add_field(name="🎲 /de [faces]", value="Lance un dé", inline=False)
     embed.add_field(name="🎮 /steam [jeu]", value="Cherche un jeu sur Steam", inline=False)
     embed.add_field(name="😂 /dadjoke", value="Envoie un dad joke", inline=False)
-    embed.set_footer(text=f"💵 +${SALAIRE_MESSAGE}/message • 📊 +${REWARD_SONDAGE_CREATEUR} créer sondage • ✅ +${REWARD_SONDAGE_REPONSE} répondre • 💰 +${SALAIRE_HEBDO}$/semaine")
+    embed.set_footer(text=f"💵 +${SALAIRE_MESSAGE}/message • 🎁 Daily 50$-250$ • 📊 +${REWARD_SONDAGE_CREATEUR} créer sondage • ✅ +${REWARD_SONDAGE_REPONSE} répondre • 💰 +${SALAIRE_HEBDO}$/semaine")
     await interaction.response.send_message(embed=embed)
 
 # =================== EVENTS ===================
