@@ -1014,8 +1014,8 @@ def avancer_tour(game):
 
 class RaiseModal(discord.ui.Modal, title="Relancer"):
     montant = discord.ui.TextInput(
-        label="Montant de la relance (en plus de la mise courante)",
-        placeholder="Ex: 50",
+        label="Montant à relancer",
+        placeholder="Ex: 50 (en plus de la mise courante)",
         required=True,
         max_length=10
     )
