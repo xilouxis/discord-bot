@@ -1,7 +1,7 @@
 import discord
 import os
 import aiohttp
-import psycopg2
+import mysql.connector
 import secrets
 import asyncio
 from datetime import date
@@ -44,151 +44,181 @@ horse_games = {}
 # =================== BASE DE DONNÉES ===================
 
 def get_conn():
-    url = os.environ["DATABASE_URL"]
-    if url.startswith("postgres://"):
-        url = url.replace("postgres://", "postgresql://", 1)
-    return psycopg2.connect(url)
+    return mysql.connector.connect(
+        host=os.environ.get("DB_HOST", "localhost"),
+        user=os.environ.get("DB_USER", "discordbot"),
+        password=os.environ.get("DB_PASSWORD", ""),
+        database=os.environ.get("DB_NAME", "discordbot"),
+        autocommit=False
+    )
 
 def init_db():
-    with get_conn() as conn:
-        with conn.cursor() as cur:
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS bank (
-                    user_id TEXT PRIMARY KEY,
-                    solde REAL DEFAULT 0
-                )
-            """)
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS sondage_log (
-                    user_id TEXT,
-                    jour DATE,
-                    type TEXT,
-                    PRIMARY KEY (user_id, jour, type)
-                )
-            """)
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS poll_responses (
-                    poll_message_id TEXT,
-                    user_id TEXT,
-                    PRIMARY KEY (poll_message_id, user_id)
-                )
-            """)
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS stats (
-                    user_id TEXT PRIMARY KEY,
-                    parties_jouees INTEGER DEFAULT 0,
-                    parties_gagnees INTEGER DEFAULT 0,
-                    gains_totaux REAL DEFAULT 0,
-                    pertes_totales REAL DEFAULT 0
-                )
-            """)
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS daily (
-                    user_id TEXT PRIMARY KEY,
-                    last_claim DATE,
-                    streak INTEGER DEFAULT 0
-                )
-            """)
-        conn.commit()
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS bank (
+            user_id VARCHAR(20) PRIMARY KEY,
+            solde FLOAT DEFAULT 0
+        )
+    """)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS sondage_log (
+            user_id VARCHAR(20),
+            jour DATE,
+            type VARCHAR(20),
+            PRIMARY KEY (user_id, jour, type)
+        )
+    """)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS poll_responses (
+            poll_message_id VARCHAR(20),
+            user_id VARCHAR(20),
+            PRIMARY KEY (poll_message_id, user_id)
+        )
+    """)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS stats (
+            user_id VARCHAR(20) PRIMARY KEY,
+            parties_jouees INTEGER DEFAULT 0,
+            parties_gagnees INTEGER DEFAULT 0,
+            gains_totaux FLOAT DEFAULT 0,
+            pertes_totales FLOAT DEFAULT 0
+        )
+    """)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS daily (
+            user_id VARCHAR(20) PRIMARY KEY,
+            last_claim DATE,
+            streak INTEGER DEFAULT 0
+        )
+    """)
+    conn.commit()
+    cur.close()
+    conn.close()
 
 def get_solde(user_id):
-    with get_conn() as conn:
-        with conn.cursor() as cur:
-            cur.execute("SELECT solde FROM bank WHERE user_id = %s", (str(user_id),))
-            row = cur.fetchone()
-            if not row:
-                cur.execute("INSERT INTO bank (user_id, solde) VALUES (%s, 0) ON CONFLICT DO NOTHING", (str(user_id),))
-                conn.commit()
-                return 0
-            return row[0]
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("SELECT solde FROM bank WHERE user_id = %s", (str(user_id),))
+    row = cur.fetchone()
+    if not row:
+        cur.execute("INSERT IGNORE INTO bank (user_id, solde) VALUES (%s, 0)", (str(user_id),))
+        conn.commit()
+        cur.close()
+        conn.close()
+        return 0
+    cur.close()
+    conn.close()
+    return row[0]
 
 def set_solde(user_id, montant):
-    with get_conn() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                "INSERT INTO bank (user_id, solde) VALUES (%s, %s) ON CONFLICT (user_id) DO UPDATE SET solde = EXCLUDED.solde",
-                (str(user_id), montant)
-            )
-        conn.commit()
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT INTO bank (user_id, solde) VALUES (%s, %s) ON DUPLICATE KEY UPDATE solde = VALUES(solde)",
+        (str(user_id), montant)
+    )
+    conn.commit()
+    cur.close()
+    conn.close()
 
 def add_solde(user_id, montant):
     solde = get_solde(user_id)
     set_solde(user_id, round(solde + montant, 2))
 
 def get_all_users():
-    with get_conn() as conn:
-        with conn.cursor() as cur:
-            cur.execute("SELECT user_id FROM bank")
-            return [row[0] for row in cur.fetchall()]
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("SELECT user_id FROM bank")
+    rows = [row[0] for row in cur.fetchall()]
+    cur.close()
+    conn.close()
+    return rows
 
 def peut_creer_sondage(user_id):
-    with get_conn() as conn:
-        with conn.cursor() as cur:
-            cur.execute("SELECT 1 FROM sondage_log WHERE user_id=%s AND jour=%s AND type='creation'", (str(user_id), date.today()))
-            return cur.fetchone() is None
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("SELECT 1 FROM sondage_log WHERE user_id=%s AND jour=%s AND type='creation'", (str(user_id), date.today()))
+    result = cur.fetchone() is None
+    cur.close()
+    conn.close()
+    return result
 
 def marquer_sondage_creation(user_id):
-    with get_conn() as conn:
-        with conn.cursor() as cur:
-            cur.execute("INSERT INTO sondage_log (user_id, jour, type) VALUES (%s, %s, 'creation') ON CONFLICT DO NOTHING", (str(user_id), date.today()))
-        conn.commit()
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("INSERT IGNORE INTO sondage_log (user_id, jour, type) VALUES (%s, %s, 'creation')", (str(user_id), date.today()))
+    conn.commit()
+    cur.close()
+    conn.close()
 
 def peut_repondre_sondage(poll_message_id, user_id):
-    with get_conn() as conn:
-        with conn.cursor() as cur:
-            cur.execute("SELECT 1 FROM poll_responses WHERE poll_message_id=%s AND user_id=%s", (str(poll_message_id), str(user_id)))
-            return cur.fetchone() is None
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("SELECT 1 FROM poll_responses WHERE poll_message_id=%s AND user_id=%s", (str(poll_message_id), str(user_id)))
+    result = cur.fetchone() is None
+    cur.close()
+    conn.close()
+    return result
 
 def marquer_reponse_sondage(poll_message_id, user_id):
-    with get_conn() as conn:
-        with conn.cursor() as cur:
-            cur.execute("INSERT INTO poll_responses (poll_message_id, user_id) VALUES (%s, %s) ON CONFLICT DO NOTHING", (str(poll_message_id), str(user_id)))
-        conn.commit()
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("INSERT IGNORE INTO poll_responses (poll_message_id, user_id) VALUES (%s, %s)", (str(poll_message_id), str(user_id)))
+    conn.commit()
+    cur.close()
+    conn.close()
 
 def add_stat(user_id, gagne, montant):
-    with get_conn() as conn:
-        with conn.cursor() as cur:
-            cur.execute("""
-                INSERT INTO stats (user_id, parties_jouees, parties_gagnees, gains_totaux, pertes_totales)
-                VALUES (%s, 1, %s, %s, %s)
-                ON CONFLICT (user_id) DO UPDATE SET
-                    parties_jouees = stats.parties_jouees + 1,
-                    parties_gagnees = stats.parties_gagnees + %s,
-                    gains_totaux = stats.gains_totaux + %s,
-                    pertes_totales = stats.pertes_totales + %s
-            """, (
-                str(user_id),
-                1 if gagne else 0,
-                montant if gagne else 0,
-                0 if gagne else montant,
-                1 if gagne else 0,
-                montant if gagne else 0,
-                0 if gagne else montant
-            ))
-        conn.commit()
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO stats (user_id, parties_jouees, parties_gagnees, gains_totaux, pertes_totales)
+        VALUES (%s, 1, %s, %s, %s)
+        ON DUPLICATE KEY UPDATE
+            parties_jouees = parties_jouees + 1,
+            parties_gagnees = parties_gagnees + %s,
+            gains_totaux = gains_totaux + %s,
+            pertes_totales = pertes_totales + %s
+    """, (
+        str(user_id),
+        1 if gagne else 0,
+        montant if gagne else 0,
+        0 if gagne else montant,
+        1 if gagne else 0,
+        montant if gagne else 0,
+        0 if gagne else montant
+    ))
+    conn.commit()
+    cur.close()
+    conn.close()
 
 def get_stats(user_id):
-    with get_conn() as conn:
-        with conn.cursor() as cur:
-            cur.execute("SELECT * FROM stats WHERE user_id = %s", (str(user_id),))
-            row = cur.fetchone()
-            if not row:
-                return {"parties_jouees": 0, "parties_gagnees": 0, "gains_totaux": 0, "pertes_totales": 0}
-            return {
-                "parties_jouees": row[1],
-                "parties_gagnees": row[2],
-                "gains_totaux": row[3],
-                "pertes_totales": row[4]
-            }
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM stats WHERE user_id = %s", (str(user_id),))
+    row = cur.fetchone()
+    cur.close()
+    conn.close()
+    if not row:
+        return {"parties_jouees": 0, "parties_gagnees": 0, "gains_totaux": 0, "pertes_totales": 0}
+    return {
+        "parties_jouees": row[1],
+        "parties_gagnees": row[2],
+        "gains_totaux": row[3],
+        "pertes_totales": row[4]
+    }
 
 def get_daily_info(user_id):
-    with get_conn() as conn:
-        with conn.cursor() as cur:
-            cur.execute("SELECT last_claim, streak FROM daily WHERE user_id = %s", (str(user_id),))
-            row = cur.fetchone()
-            if not row:
-                return {"last_claim": None, "streak": 0}
-            return {"last_claim": row[0], "streak": row[1]}
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("SELECT last_claim, streak FROM daily WHERE user_id = %s", (str(user_id),))
+    row = cur.fetchone()
+    cur.close()
+    conn.close()
+    if not row:
+        return {"last_claim": None, "streak": 0}
+    return {"last_claim": row[0], "streak": row[1]}
 
 def claim_daily(user_id):
     from datetime import date, timedelta
@@ -200,23 +230,23 @@ def claim_daily(user_id):
     if last == today:
         return None, streak, "already"
 
-    # Streak continue si hier
     yesterday = today - timedelta(days=1)
     if last == yesterday:
         new_streak = min(streak + 1, DAILY_MAX_STREAK)
     else:
         new_streak = 1
 
-    # Calcul du montant: jour 1=50$, jour 2=70$... jusqu'à jour 7=250$
     montant = DAILY_BASE + (new_streak - 1) * ((DAILY_MAX_BONUS - DAILY_BASE) // (DAILY_MAX_STREAK - 1))
 
-    with get_conn() as conn:
-        with conn.cursor() as cur:
-            cur.execute("""
-                INSERT INTO daily (user_id, last_claim, streak) VALUES (%s, %s, %s)
-                ON CONFLICT (user_id) DO UPDATE SET last_claim = %s, streak = %s
-            """, (str(user_id), today, new_streak, today, new_streak))
-        conn.commit()
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO daily (user_id, last_claim, streak) VALUES (%s, %s, %s)
+        ON DUPLICATE KEY UPDATE last_claim = VALUES(last_claim), streak = VALUES(streak)
+    """, (str(user_id), today, new_streak))
+    conn.commit()
+    cur.close()
+    conn.close()
 
     add_solde(user_id, montant)
     return montant, new_streak, "ok"
@@ -835,7 +865,6 @@ def get_joueurs_actifs(game):
     return [uid for uid, d in game["joueurs"].items() if not d["fold"] and not d.get("allin", False)]
 
 def get_joueurs_en_jeu(game):
-    # Joueurs pas fold (incluant all-in)
     return [uid for uid, d in game["joueurs"].items() if not d["fold"]]
 
 def get_nom(guild, uid):
@@ -852,7 +881,6 @@ def build_poker_embed(game, guild):
     ordre = game.get("ordre", [])
     tour_index = game.get("tour_index", 0)
 
-    # Trouver le joueur actuel
     current_uid = None
     if ordre:
         for i in range(len(ordre)):
@@ -866,7 +894,6 @@ def build_poker_embed(game, guild):
     embed.add_field(name="💰 Pot", value=f"**${game['pot']}**", inline=True)
     embed.add_field(name="Mise à suivre", value=f"**${game['mise_courante']}**", inline=True)
 
-    # Cartes communes selon la phase
     if phase == "preflop":
         embed.add_field(name="Cartes communes", value="🂠 🂠 🂠 🂠 🂠", inline=False)
     elif phase == "flop":
@@ -876,7 +903,6 @@ def build_poker_embed(game, guild):
     else:
         embed.add_field(name="Cartes communes", value=afficher_cartes(community), inline=False)
 
-    # Liste des joueurs
     bb_uid = game.get("big_blind_uid")
     sb_uid = game.get("small_blind_uid")
     joueurs_str = ""
@@ -969,13 +995,11 @@ async def poker_next_phase(interaction, game_id):
 
     phase = game["phase"]
 
-    # Réinitialiser mises de phase pour tous (sauf fold)
     for uid in game["joueurs"]:
         game["joueurs"][uid]["mise_phase"] = 0
     game["mise_courante"] = 0
     game["joueurs_parle"] = set()
 
-    # Ordre commence au joueur après le dealer (SB en premier post-flop)
     actifs_non_allin = get_joueurs_actifs(game)
     game["ordre"] = [uid for uid in game["ordre"] if not game["joueurs"][uid]["fold"]]
     game["tour_index"] = 0
@@ -990,9 +1014,7 @@ async def poker_next_phase(interaction, game_id):
         await poker_showdown(interaction, game_id)
         return
 
-    # Si tous les joueurs actifs (non-fold) sont all-in, on va direct au showdown
     if len(actifs_non_allin) == 0:
-        # Tout le monde est all-in, on révèle toutes les phases puis showdown
         game["phase"] = "river"
         await poker_showdown(interaction, game_id)
         return
@@ -1001,7 +1023,6 @@ async def poker_next_phase(interaction, game_id):
     await interaction.response.edit_message(embed=embed, view=PokerActionView(game_id))
 
 def avancer_tour(game):
-    """Avance tour_index au prochain joueur qui peut agir (pas fold, pas all-in)"""
     ordre = game["ordre"]
     n = len(ordre)
     for i in range(1, n + 1):
@@ -1169,7 +1190,6 @@ class PokerActionView(View):
         game["joueurs"][user_id]["mise_phase"] += solde
         game["joueurs"][user_id]["mise_totale"] += solde
         game["pot"] += solde
-        # Si la mise all-in dépasse la mise courante, c'est une relance
         if game["joueurs"][user_id]["mise_phase"] > game["mise_courante"]:
             game["mise_courante"] = game["joueurs"][user_id]["mise_phase"]
             game["joueurs_parle"] = {user_id}
@@ -1215,7 +1235,6 @@ class PokerJoinView(View):
         if len(game["joueurs"]) >= 6:
             await interaction.response.send_message("❌ La partie est pleine (6 max) !", ephemeral=True)
             return
-        # Le 2e joueur est Small Blind (BB/2), les autres ne paient rien au lobby
         is_small_blind = len(game["joueurs"]) == 1
         montant_entree = self.big_blind // 2 if is_small_blind else 0
         solde = get_solde(user_id)
@@ -1273,7 +1292,6 @@ async def demarrer_poker(interaction, game_id):
     host_id = game["host"]
     sb_uid = game.get("small_blind_uid")
 
-    # Ordre: BB en premier (index 0), SB en 2e, reste après
     ordre = [host_id]
     if sb_uid:
         ordre.append(sb_uid)
@@ -1282,7 +1300,6 @@ async def demarrer_poker(interaction, game_id):
             ordre.append(uid)
     game["ordre"] = ordre
 
-    # Distribuer cartes
     deck = nouveau_deck()
     idx = 0
     for uid in ordre:
@@ -1293,14 +1310,11 @@ async def demarrer_poker(interaction, game_id):
     game["mise_courante"] = big_blind
     game["joueurs_parle"] = set()
 
-    # Le preflop commence au joueur APRÈS le SB (donc le 3e joueur, ou le BB si 2 joueurs)
-    # En heads-up (2 joueurs), BB agit en premier preflop
     if len(ordre) == 2:
-        game["tour_index"] = 0  # BB agit en premier en heads-up
+        game["tour_index"] = 0
     else:
-        game["tour_index"] = 2  # Commence au joueur après SB
+        game["tour_index"] = 2
 
-    # Envoyer cartes en DM
     for uid, data in game["joueurs"].items():
         member = interaction.guild.get_member(uid)
         if member:
@@ -1593,10 +1607,12 @@ async def solde(interaction: discord.Interaction, membre: discord.Member = None)
 
 @tree.command(name="richesse", description="Top 10 des plus riches du serveur !")
 async def richesse(interaction: discord.Interaction):
-    with get_conn() as conn:
-        with conn.cursor() as cur:
-            cur.execute("SELECT user_id, solde FROM bank ORDER BY solde DESC LIMIT 10")
-            rows = cur.fetchall()
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("SELECT user_id, solde FROM bank ORDER BY solde DESC LIMIT 10")
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
     embed = discord.Embed(title="💰 Top 10 des plus riches", color=discord.Color.gold())
     for i, (user_id, s) in enumerate(rows):
         member = interaction.guild.get_member(int(user_id))
@@ -1774,11 +1790,8 @@ async def daily(interaction: discord.Interaction):
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return
 
-    # Calcul du prochain montant
     next_streak = min(streak + 1, DAILY_MAX_STREAK)
     next_montant = DAILY_BASE + (next_streak - 1) * ((DAILY_MAX_BONUS - DAILY_BASE) // (DAILY_MAX_STREAK - 1))
-
-    # Barre de progression du streak
     barre = "🔥" * streak + "⬜" * (DAILY_MAX_STREAK - streak)
 
     embed = discord.Embed(title="🎁 Daily réclamé !", color=discord.Color.gold())
@@ -1795,7 +1808,6 @@ async def daily(interaction: discord.Interaction):
 @tree.command(name="retirer", description="[Modo] Retire de l'argent à un membre avec un rôle moins important")
 @discord.app_commands.describe(membre="Le membre ciblé", montant="Montant à retirer", raison="Raison du retrait")
 async def retirer(interaction: discord.Interaction, membre: discord.Member, montant: int, raison: str = "Aucune raison fournie"):
-    # Vérifier que l'utilisateur a le rôle admin ou plus
     role_admin = discord.utils.get(interaction.guild.roles, name="Admins")
     if role_admin is None:
         await interaction.response.send_message("❌ Le rôle 'Admins' n'existe pas sur ce serveur !", ephemeral=True)
@@ -1822,36 +1834,10 @@ async def retirer(interaction: discord.Interaction, membre: discord.Member, mont
     embed.add_field(name="Raison", value=raison, inline=False)
     embed.add_field(name=f"Nouveau solde de {membre.display_name}", value=f"${get_solde(membre.id):.2f}", inline=False)
     await interaction.response.send_message(embed=embed)
-    # Notifier le membre en DM
     try:
         await membre.send(f"💸 **{interaction.user.display_name}** t'a retiré **${retrait_reel}**.\nRaison: {raison}\nNouveau solde: ${get_solde(membre.id):.2f}")
     except:
         pass
-
-
-async def help(interaction: discord.Interaction):
-    embed = discord.Embed(title="📖 Commandes du bot", color=discord.Color.blue())
-    embed.add_field(name="🃏 /blackjack [mise]", value="Blackjack solo", inline=False)
-    embed.add_field(name="🃏 /blackjack2 [mise] [membre]", value="Blackjack multijoueur", inline=False)
-    embed.add_field(name="🃏 /poker [blind]", value="Poker Texas Hold'em 2-6 joueurs avec vraies mécaniques", inline=False)
-    embed.add_field(name="🎰 /roulette [mise]", value="Roulette multijoueur", inline=False)
-    embed.add_field(name="🚌 /ridethebus [mise]", value="Ride the Bus avec Cash Out", inline=False)
-    embed.add_field(name="🎰 /slots [mise]", value="Lance les slots", inline=False)
-    embed.add_field(name="🏇 /course [mise]", value="Course de chevaux multijoueur", inline=False)
-    embed.add_field(name="💰 /solde", value="Affiche ton solde", inline=False)
-    embed.add_field(name="🏆 /richesse", value="Top 10 des plus riches", inline=False)
-    embed.add_field(name="💸 /donner [membre] [montant]", value="Donne de l'argent à quelqu'un", inline=False)
-    embed.add_field(name="🎁 /daily", value="Bonus quotidien avec streak (50$ → 250$/jour)", inline=False)
-    embed.add_field(name="🔨 /retirer [membre] [montant]", value="[Modo] Retire de l'argent à un membre", inline=False)
-    embed.add_field(name="📊 /stats [membre]", value="Affiche tes statistiques de jeu", inline=False)
-    embed.add_field(name="❓ /instructions [jeu]", value="Instructions d'un jeu", inline=False)
-    embed.add_field(name="🎁 /steamgratuit", value="Jeux gratuits à 100% sur Steam", inline=False)
-    embed.add_field(name="🪙 /pileouface", value="Lance une pièce", inline=False)
-    embed.add_field(name="🎲 /de [faces]", value="Lance un dé", inline=False)
-    embed.add_field(name="🎮 /steam [jeu]", value="Cherche un jeu sur Steam", inline=False)
-    embed.add_field(name="😂 /dadjoke", value="Envoie un dad joke", inline=False)
-    embed.set_footer(text=f"💵 +${SALAIRE_MESSAGE}/message • 🎁 Daily 50$-250$ • 📊 +${REWARD_SONDAGE_CREATEUR} créer sondage • ✅ +${REWARD_SONDAGE_REPONSE} répondre • 💰 +${SALAIRE_HEBDO}$/semaine")
-    await interaction.response.send_message(embed=embed)
 
 # =================== EVENTS ===================
 
