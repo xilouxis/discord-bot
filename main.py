@@ -1269,7 +1269,7 @@ class PokerJoinView(View):
 
 async def demarrer_poker(interaction, game_id):
     game = poker_games[game_id]
-    big_blind = game["big_blind"]
+    big_blind = game["blind"]
     host_id = game["host"]
     sb_uid = game.get("small_blind_uid")
 
