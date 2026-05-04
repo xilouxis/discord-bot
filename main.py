@@ -779,11 +779,6 @@ async def roulette_parier(interaction, game_id, type_pari):
 
 # =================== POKER TEXAS HOLD'EM ===================
 
-MAINS_POKER = [
-    "Carte haute", "Paire", "Double paire", "Brelan",
-    "Suite", "Couleur", "Full house", "Carré", "Quinte flush", "Quinte flush royale"
-]
-
 def evaluer_main_poker(cartes):
     valeurs = [c[0] for c in cartes]
     couleurs = [c[1] for c in cartes]
@@ -805,7 +800,7 @@ def evaluer_main_poker(cartes):
         return 8, "Quinte flush"
     if freqs[0] == 4:
         return 7, "Carré"
-    if freqs[0] == 3 and freqs[1] == 2:
+    if freqs[0] == 3 and len(freqs) > 1 and freqs[1] == 2:
         return 6, "Full house"
     if flush:
         return 5, "Couleur"
@@ -813,7 +808,7 @@ def evaluer_main_poker(cartes):
         return 4, "Suite"
     if freqs[0] == 3:
         return 3, "Brelan"
-    if freqs[0] == 2 and freqs[1] == 2:
+    if freqs[0] == 2 and len(freqs) > 1 and freqs[1] == 2:
         return 2, "Double paire"
     if freqs[0] == 2:
         return 1, "Paire"
@@ -837,20 +832,41 @@ def afficher_cartes(cartes):
     return " ".join([f"`{c[0]}{c[1]}`" for c in cartes])
 
 def get_joueurs_actifs(game):
+    return [uid for uid, d in game["joueurs"].items() if not d["fold"] and not d.get("allin", False)]
+
+def get_joueurs_en_jeu(game):
+    # Joueurs pas fold (incluant all-in)
     return [uid for uid, d in game["joueurs"].items() if not d["fold"]]
 
 def get_nom(guild, uid):
     m = guild.get_member(uid)
     return m.display_name if m else str(uid)
 
-def build_poker_embed(game, guild, phase_label):
-    actifs = get_joueurs_actifs(game)
-    current_uid = game["ordre"][game["tour_index"] % len(game["ordre"])] if game["ordre"] else None
-    embed = discord.Embed(title=f"🃏 Poker - {phase_label}", color=discord.Color.green())
-    embed.add_field(name="💰 Pot", value=f"**${game['pot']}**", inline=True)
-    embed.add_field(name="Mise actuelle", value=f"**${game['mise_courante']}**", inline=True)
-    community = game.get("community", [])
+def get_phase_label(phase):
+    labels = {"preflop": "Preflop", "flop": "Flop", "turn": "Turn", "river": "River"}
+    return labels.get(phase, phase.capitalize())
+
+def build_poker_embed(game, guild):
     phase = game.get("phase", "preflop")
+    community = game.get("community", [])
+    ordre = game.get("ordre", [])
+    tour_index = game.get("tour_index", 0)
+
+    # Trouver le joueur actuel
+    current_uid = None
+    if ordre:
+        for i in range(len(ordre)):
+            uid = ordre[(tour_index + i) % len(ordre)]
+            d = game["joueurs"][uid]
+            if not d["fold"] and not d.get("allin", False):
+                current_uid = uid
+                break
+
+    embed = discord.Embed(title=f"🃏 Poker - {get_phase_label(phase)}", color=discord.Color.green())
+    embed.add_field(name="💰 Pot", value=f"**${game['pot']}**", inline=True)
+    embed.add_field(name="Mise à suivre", value=f"**${game['mise_courante']}**", inline=True)
+
+    # Cartes communes selon la phase
     if phase == "preflop":
         embed.add_field(name="Cartes communes", value="🂠 🂠 🂠 🂠 🂠", inline=False)
     elif phase == "flop":
@@ -859,26 +875,61 @@ def build_poker_embed(game, guild, phase_label):
         embed.add_field(name="Cartes communes", value=afficher_cartes(community[:4]) + " 🂠", inline=False)
     else:
         embed.add_field(name="Cartes communes", value=afficher_cartes(community), inline=False)
+
+    # Liste des joueurs
+    bb_uid = game.get("big_blind_uid")
+    sb_uid = game.get("small_blind_uid")
     joueurs_str = ""
-    for uid in game["ordre"]:
+    for uid in ordre:
         d = game["joueurs"][uid]
         nom = get_nom(guild, uid)
-        statut = "❌ Fold" if d["fold"] else ("✅ Suivi" if d["mise_phase"] == game["mise_courante"] else "⏳ En attente")
-        current_marker = " 👈" if uid == current_uid and not d["fold"] else ""
-        joueurs_str += f"{nom}: ${d['mise_phase']} misé {statut}{current_marker}\n"
+        role_tag = ""
+        if uid == bb_uid:
+            role_tag = " [BB]"
+        elif uid == sb_uid:
+            role_tag = " [SB]"
+        if d["fold"]:
+            statut = "❌ Fold"
+        elif d.get("allin", False):
+            statut = "💥 All-in"
+        elif d["mise_phase"] >= game["mise_courante"] and uid in game.get("joueurs_parle", set()):
+            statut = "✅ Suivi"
+        else:
+            statut = "⏳ En attente"
+        arrow = " 👈" if uid == current_uid else ""
+        joueurs_str += f"**{nom}**{role_tag}: ${d['mise_phase']} misé — {statut}{arrow}\n"
+
     embed.add_field(name="Joueurs", value=joueurs_str or "Aucun", inline=False)
-    if current_uid and not game["joueurs"][current_uid]["fold"]:
-        embed.set_footer(text=f"C'est au tour de {get_nom(guild, current_uid)} !")
+
+    if current_uid:
+        solde_actuel = get_solde(current_uid)
+        embed.set_footer(text=f"Tour de {get_nom(guild, current_uid)} | Solde: ${solde_actuel:.2f}")
+
     return embed
+
+async def poker_fin_un_joueur(interaction, game_id):
+    game = poker_games[game_id]
+    en_jeu = get_joueurs_en_jeu(game)
+    uid = en_jeu[0]
+    add_solde(uid, game["pot"])
+    add_stat(uid, True, game["pot"] - game["joueurs"][uid]["mise_totale"])
+    for u, d in game["joueurs"].items():
+        if u != uid:
+            add_stat(u, False, d["mise_totale"])
+    nom = get_nom(interaction.guild, uid)
+    embed = discord.Embed(title="🃏 Poker - Fin de partie !", description=f"🏆 **{nom}** gagne **${game['pot']}** — tous les autres ont fold !", color=discord.Color.gold())
+    embed.add_field(name="💰 Nouveau solde", value=f"${get_solde(uid):.2f}", inline=False)
+    del poker_games[game_id]
+    await interaction.response.edit_message(embed=embed, view=None)
 
 async def poker_showdown(interaction, game_id):
     game = poker_games[game_id]
     community = game["community"]
-    actifs = get_joueurs_actifs(game)
+    en_jeu = get_joueurs_en_jeu(game)
     resultats = []
     meilleur_rang = -1
     gagnants = []
-    for uid in actifs:
+    for uid in en_jeu:
         data = game["joueurs"][uid]
         rang, desc = meilleure_main(data["hole"], community)
         nom = get_nom(interaction.guild, uid)
@@ -910,82 +961,140 @@ async def poker_showdown(interaction, game_id):
 
 async def poker_next_phase(interaction, game_id):
     game = poker_games[game_id]
-    actifs = get_joueurs_actifs(game)
+    en_jeu = get_joueurs_en_jeu(game)
 
-    # Si un seul joueur restant, il gagne automatiquement
-    if len(actifs) == 1:
-        uid = actifs[0]
-        add_solde(uid, game["pot"])
-        add_stat(uid, True, game["pot"] - game["joueurs"][uid]["mise_totale"])
-        for u, d in game["joueurs"].items():
-            if u != uid:
-                add_stat(u, False, d["mise_totale"])
-        nom = get_nom(interaction.guild, uid)
-        embed = discord.Embed(title="🃏 Poker - Fin de partie !", description=f"🏆 **{nom}** gagne **${game['pot']}** — tous les autres ont fold !", color=discord.Color.gold())
-        embed.add_field(name="💰 Solde", value=f"${get_solde(uid):.2f}", inline=False)
-        del poker_games[game_id]
-        await interaction.response.edit_message(embed=embed, view=None)
+    if len(en_jeu) <= 1:
+        await poker_fin_un_joueur(interaction, game_id)
         return
 
     phase = game["phase"]
-    # Réinitialiser les mises de phase
+
+    # Réinitialiser mises de phase pour tous (sauf fold)
     for uid in game["joueurs"]:
         game["joueurs"][uid]["mise_phase"] = 0
     game["mise_courante"] = 0
     game["joueurs_parle"] = set()
-    game["ordre"] = actifs
+
+    # Ordre commence au joueur après le dealer (SB en premier post-flop)
+    actifs_non_allin = get_joueurs_actifs(game)
+    game["ordre"] = [uid for uid in game["ordre"] if not game["joueurs"][uid]["fold"]]
     game["tour_index"] = 0
 
     if phase == "preflop":
         game["phase"] = "flop"
-        embed = build_poker_embed(game, interaction.guild, "Flop")
     elif phase == "flop":
         game["phase"] = "turn"
-        embed = build_poker_embed(game, interaction.guild, "Turn")
     elif phase == "turn":
         game["phase"] = "river"
-        embed = build_poker_embed(game, interaction.guild, "River")
     elif phase == "river":
         await poker_showdown(interaction, game_id)
         return
 
+    # Si tous les joueurs actifs (non-fold) sont all-in, on va direct au showdown
+    if len(actifs_non_allin) == 0:
+        # Tout le monde est all-in, on révèle toutes les phases puis showdown
+        game["phase"] = "river"
+        await poker_showdown(interaction, game_id)
+        return
+
+    embed = build_poker_embed(game, interaction.guild)
     await interaction.response.edit_message(embed=embed, view=PokerActionView(game_id))
+
+def avancer_tour(game):
+    """Avance tour_index au prochain joueur qui peut agir (pas fold, pas all-in)"""
+    ordre = game["ordre"]
+    n = len(ordre)
+    for i in range(1, n + 1):
+        uid = ordre[(game["tour_index"] + i) % n]
+        d = game["joueurs"][uid]
+        if not d["fold"] and not d.get("allin", False):
+            game["tour_index"] = (game["tour_index"] + i) % n
+            return uid
+    return None
+
+class RaiseModal(discord.ui.Modal, title="Relancer"):
+    montant = discord.ui.TextInput(
+        label="Montant de la relance (en plus de la mise courante)",
+        placeholder="Ex: 50",
+        required=True,
+        max_length=10
+    )
+
+    def __init__(self, game_id):
+        super().__init__()
+        self.game_id = game_id
+
+    async def on_submit(self, interaction: discord.Interaction):
+        game = poker_games.get(self.game_id)
+        if not game:
+            await interaction.response.send_message("❌ Partie introuvable !", ephemeral=True)
+            return
+        user_id = interaction.user.id
+        try:
+            raise_amount = int(self.montant.value)
+            if raise_amount <= 0:
+                raise ValueError
+        except ValueError:
+            await interaction.response.send_message("❌ Montant invalide !", ephemeral=True)
+            return
+
+        a_suivre = game["mise_courante"] - game["joueurs"][user_id]["mise_phase"]
+        total_a_payer = a_suivre + raise_amount
+        solde = get_solde(user_id)
+
+        if total_a_payer > solde:
+            await interaction.response.send_message(f"❌ Pas assez d'argent ! Il te faut ${total_a_payer}, solde: ${solde:.2f}", ephemeral=True)
+            return
+
+        add_solde(user_id, -total_a_payer)
+        game["joueurs"][user_id]["mise_phase"] += total_a_payer
+        game["joueurs"][user_id]["mise_totale"] += total_a_payer
+        game["pot"] += total_a_payer
+        game["mise_courante"] = game["joueurs"][user_id]["mise_phase"]
+        game["joueurs_parle"] = {user_id}
+        avancer_tour(game)
+        embed = build_poker_embed(game, interaction.guild)
+        await interaction.response.edit_message(embed=embed, view=PokerActionView(self.game_id))
 
 class PokerActionView(View):
     def __init__(self, game_id):
-        super().__init__(timeout=120)
+        super().__init__(timeout=180)
         self.game_id = game_id
 
     def get_current_player(self):
         game = poker_games.get(self.game_id)
         if not game or not game["ordre"]:
             return None
-        return game["ordre"][game["tour_index"] % len(game["ordre"])]
+        ordre = game["ordre"]
+        idx = game["tour_index"] % len(ordre)
+        uid = ordre[idx]
+        d = game["joueurs"][uid]
+        if d["fold"] or d.get("allin", False):
+            return avancer_tour(game)
+        return uid
 
     async def check_tour_fini(self, interaction):
         game = poker_games.get(self.game_id)
         if not game:
             return
+        en_jeu = get_joueurs_en_jeu(game)
+        if len(en_jeu) <= 1:
+            await poker_fin_un_joueur(interaction, self.game_id)
+            return
         actifs = get_joueurs_actifs(game)
-        # Tour fini si tous les actifs ont parlé ET ont la même mise
         tous_parle = all(uid in game["joueurs_parle"] for uid in actifs)
-        tous_egaux = all(game["joueurs"][uid]["mise_phase"] == game["mise_courante"] for uid in actifs)
+        tous_egaux = all(
+            game["joueurs"][uid]["mise_phase"] == game["mise_courante"]
+            for uid in actifs
+        )
         if tous_parle and tous_egaux:
             await poker_next_phase(interaction, self.game_id)
         else:
-            # Avancer au prochain joueur actif
-            game["tour_index"] += 1
-            ordre = game["ordre"]
-            # Trouver le prochain joueur actif
-            for _ in range(len(ordre)):
-                uid = ordre[game["tour_index"] % len(ordre)]
-                if not game["joueurs"][uid]["fold"]:
-                    break
-                game["tour_index"] += 1
-            embed = build_poker_embed(game, interaction.guild, game["phase"].capitalize())
+            avancer_tour(game)
+            embed = build_poker_embed(game, interaction.guild)
             await interaction.response.edit_message(embed=embed, view=self)
 
-    @discord.ui.button(label="Check ✋", style=discord.ButtonStyle.gray)
+    @discord.ui.button(label="Check ✋", style=discord.ButtonStyle.gray, row=0)
     async def check(self, interaction: discord.Interaction, button: Button):
         game = poker_games.get(self.game_id)
         if not game:
@@ -997,12 +1106,12 @@ class PokerActionView(View):
             await interaction.response.send_message("❌ C'est pas ton tour !", ephemeral=True)
             return
         if game["mise_courante"] > game["joueurs"][user_id]["mise_phase"]:
-            await interaction.response.send_message("❌ Tu peux pas check, il y a une mise à suivre ! Utilise Suivre ou Fold.", ephemeral=True)
+            await interaction.response.send_message("❌ Tu peux pas check — il y a une mise à suivre !", ephemeral=True)
             return
         game["joueurs_parle"].add(user_id)
         await self.check_tour_fini(interaction)
 
-    @discord.ui.button(label="Suivre 💰", style=discord.ButtonStyle.green)
+    @discord.ui.button(label="Suivre 💰", style=discord.ButtonStyle.green, row=0)
     async def suivre(self, interaction: discord.Interaction, button: Button):
         game = poker_games.get(self.game_id)
         if not game:
@@ -1028,7 +1137,7 @@ class PokerActionView(View):
         game["joueurs_parle"].add(user_id)
         await self.check_tour_fini(interaction)
 
-    @discord.ui.button(label="Relancer 📈", style=discord.ButtonStyle.blurple)
+    @discord.ui.button(label="Relancer 📈", style=discord.ButtonStyle.blurple, row=0)
     async def relancer(self, interaction: discord.Interaction, button: Button):
         game = poker_games.get(self.game_id)
         if not game:
@@ -1039,24 +1148,37 @@ class PokerActionView(View):
         if user_id != current:
             await interaction.response.send_message("❌ C'est pas ton tour !", ephemeral=True)
             return
-        raise_amount = game["blind"] * 2
-        total_a_payer = (game["mise_courante"] - game["joueurs"][user_id]["mise_phase"]) + raise_amount
-        solde = get_solde(user_id)
-        if solde < total_a_payer:
-            await interaction.response.send_message(f"❌ Pas assez d'argent ! Il te faut ${total_a_payer}, solde: ${solde:.2f}", ephemeral=True)
-            return
-        add_solde(user_id, -total_a_payer)
-        game["joueurs"][user_id]["mise_phase"] += total_a_payer
-        game["joueurs"][user_id]["mise_totale"] += total_a_payer
-        game["pot"] += total_a_payer
-        game["mise_courante"] = game["joueurs"][user_id]["mise_phase"]
-        # Reset joueurs_parle pour forcer tout le monde à répondre
-        game["joueurs_parle"] = {user_id}
-        game["tour_index"] += 1
-        embed = build_poker_embed(game, interaction.guild, game["phase"].capitalize())
-        await interaction.response.edit_message(embed=embed, view=self)
+        await interaction.response.send_modal(RaiseModal(self.game_id))
 
-    @discord.ui.button(label="Fold 🏳️", style=discord.ButtonStyle.red)
+    @discord.ui.button(label="All-in 💥", style=discord.ButtonStyle.danger, row=0)
+    async def allin(self, interaction: discord.Interaction, button: Button):
+        game = poker_games.get(self.game_id)
+        if not game:
+            await interaction.response.send_message("❌ Partie introuvable !", ephemeral=True)
+            return
+        user_id = interaction.user.id
+        current = self.get_current_player()
+        if user_id != current:
+            await interaction.response.send_message("❌ C'est pas ton tour !", ephemeral=True)
+            return
+        solde = get_solde(user_id)
+        if solde <= 0:
+            await interaction.response.send_message("❌ Tu n'as plus d'argent !", ephemeral=True)
+            return
+        add_solde(user_id, -solde)
+        game["joueurs"][user_id]["mise_phase"] += solde
+        game["joueurs"][user_id]["mise_totale"] += solde
+        game["pot"] += solde
+        # Si la mise all-in dépasse la mise courante, c'est une relance
+        if game["joueurs"][user_id]["mise_phase"] > game["mise_courante"]:
+            game["mise_courante"] = game["joueurs"][user_id]["mise_phase"]
+            game["joueurs_parle"] = {user_id}
+        else:
+            game["joueurs_parle"].add(user_id)
+        game["joueurs"][user_id]["allin"] = True
+        await self.check_tour_fini(interaction)
+
+    @discord.ui.button(label="Fold 🏳️", style=discord.ButtonStyle.red, row=1)
     async def fold(self, interaction: discord.Interaction, button: Button):
         game = poker_games.get(self.game_id)
         if not game:
@@ -1072,10 +1194,10 @@ class PokerActionView(View):
         await self.check_tour_fini(interaction)
 
 class PokerJoinView(View):
-    def __init__(self, game_id, mise):
+    def __init__(self, game_id, big_blind):
         super().__init__(timeout=120)
         self.game_id = game_id
-        self.mise = mise
+        self.big_blind = big_blind
 
     @discord.ui.button(label="Rejoindre 🃏", style=discord.ButtonStyle.green)
     async def rejoindre(self, interaction: discord.Interaction, button: Button):
@@ -1087,29 +1209,50 @@ class PokerJoinView(View):
         if user_id in game["joueurs"]:
             await interaction.response.send_message("❌ Tu es déjà dans la partie !", ephemeral=True)
             return
+        if user_id == game["host"]:
+            await interaction.response.send_message("❌ L'hôte (Big Blind) est déjà dans la partie !", ephemeral=True)
+            return
         if len(game["joueurs"]) >= 6:
             await interaction.response.send_message("❌ La partie est pleine (6 max) !", ephemeral=True)
             return
+        # Le 2e joueur est Small Blind (BB/2), les autres ne paient rien au lobby
+        is_small_blind = len(game["joueurs"]) == 1
+        montant_entree = self.big_blind // 2 if is_small_blind else 0
         solde = get_solde(user_id)
-        if solde < self.mise:
-            await interaction.response.send_message(f"❌ Pas assez d'argent ! Solde: ${solde:.2f}", ephemeral=True)
+        if solde < montant_entree and is_small_blind:
+            await interaction.response.send_message(f"❌ Pas assez pour le small blind (${montant_entree}) ! Solde: ${solde:.2f}", ephemeral=True)
             return
-        add_solde(user_id, -self.mise)
-        game["pot"] += self.mise
+        if is_small_blind and montant_entree > 0:
+            add_solde(user_id, -montant_entree)
+            game["pot"] += montant_entree
+            game["small_blind_uid"] = user_id
         game["joueurs"][user_id] = {
             "hole": [],
             "fold": False,
-            "mise_totale": self.mise,
-            "mise_phase": self.mise,
+            "allin": False,
+            "mise_totale": montant_entree,
+            "mise_phase": montant_entree,
         }
-        embed = discord.Embed(title="🃏 Poker Texas Hold'em", description=f"**{get_nom(interaction.guild, user_id)}** a rejoint ! ({len(game['joueurs'])}/6 joueurs)", color=discord.Color.green())
-        embed.add_field(name="Blind", value=f"${self.mise} par joueur", inline=False)
+        role = "Small Blind" if is_small_blind else "Joueur"
+        montant_str = f" (${montant_entree} small blind payé)" if is_small_blind else ""
+        embed = discord.Embed(
+            title="🃏 Poker Texas Hold'em — Lobby",
+            description=f"**{get_nom(interaction.guild, user_id)}** a rejoint comme **{role}**{montant_str} !",
+            color=discord.Color.green()
+        )
+        embed.add_field(name="Big Blind", value=f"${self.big_blind} (hôte)", inline=True)
+        embed.add_field(name="Small Blind", value=f"${self.big_blind // 2} (2e joueur)", inline=True)
         embed.add_field(name="💰 Pot actuel", value=f"${game['pot']}", inline=False)
-        embed.add_field(name="Joueurs", value="\n".join([get_nom(interaction.guild, uid) for uid in game["joueurs"]]), inline=False)
-        embed.set_footer(text="Rejoins la partie avant que l'hôte la lance !")
+        joueurs_lines = []
+        for uid in game["joueurs"]:
+            nom = get_nom(interaction.guild, uid)
+            r = "BB" if uid == game["host"] else ("SB" if uid == game.get("small_blind_uid") else "—")
+            joueurs_lines.append(f"{nom} [{r}]")
+        embed.add_field(name=f"Joueurs ({len(game['joueurs'])}/6)", value="\n".join(joueurs_lines), inline=False)
+        embed.set_footer(text="L'hôte lance quand tout le monde est prêt !")
         await interaction.response.edit_message(embed=embed, view=self)
 
-    @discord.ui.button(label="Lancer la partie ▶️", style=discord.ButtonStyle.blurple)
+    @discord.ui.button(label="Lancer ▶️", style=discord.ButtonStyle.blurple)
     async def lancer(self, interaction: discord.Interaction, button: Button):
         game = poker_games.get(self.game_id)
         if not game:
@@ -1126,18 +1269,36 @@ class PokerJoinView(View):
 
 async def demarrer_poker(interaction, game_id):
     game = poker_games[game_id]
+    big_blind = game["big_blind"]
+    host_id = game["host"]
+    sb_uid = game.get("small_blind_uid")
+
+    # Ordre: BB en premier (index 0), SB en 2e, reste après
+    ordre = [host_id]
+    if sb_uid:
+        ordre.append(sb_uid)
+    for uid in game["joueurs"]:
+        if uid not in ordre:
+            ordre.append(uid)
+    game["ordre"] = ordre
+
+    # Distribuer cartes
     deck = nouveau_deck()
     idx = 0
-    ordre = list(game["joueurs"].keys())
-    secrets.SystemRandom().shuffle(ordre)
-    game["ordre"] = ordre
-    game["tour_index"] = 0
-
     for uid in ordre:
         game["joueurs"][uid]["hole"] = [deck[idx], deck[idx+1]]
         idx += 2
     game["community"] = deck[idx:idx+5]
     game["phase"] = "preflop"
+    game["mise_courante"] = big_blind
+    game["joueurs_parle"] = set()
+
+    # Le preflop commence au joueur APRÈS le SB (donc le 3e joueur, ou le BB si 2 joueurs)
+    # En heads-up (2 joueurs), BB agit en premier preflop
+    if len(ordre) == 2:
+        game["tour_index"] = 0  # BB agit en premier en heads-up
+    else:
+        game["tour_index"] = 2  # Commence au joueur après SB
 
     # Envoyer cartes en DM
     for uid, data in game["joueurs"].items():
@@ -1148,12 +1309,8 @@ async def demarrer_poker(interaction, game_id):
             except:
                 pass
 
-    # Mise de départ (blind) déjà prise au lobby — mise_courante = blind
-    game["mise_courante"] = game["blind"]
-    game["joueurs_parle"] = set()
-
-    embed = build_poker_embed(game, interaction.guild, "Preflop")
-    embed.set_footer(text="Les cartes privées ont été envoyées en DM ! C'est parti !")
+    embed = build_poker_embed(game, interaction.guild)
+    embed.set_footer(text="🂠 Cartes privées envoyées en DM ! Les blinds sont posés, c'est parti !")
     await interaction.response.edit_message(embed=embed, view=PokerActionView(game_id))
 
 # =================== COURSES DE CHEVAUX ===================
