@@ -826,29 +826,30 @@ def evaluer_main_poker(cartes):
         indices = [3, 2, 1, 0, -1]
     if flush and suite:
         if min(indices) == 8:
-            return 9, "Quinte flush royale"
-        return 8, "Quinte flush"
+            return (9, indices), "Quinte flush royale"
+        return (8, indices), "Quinte flush"
     if freqs[0] == 4:
-        return 7, "Carré"
+        return (7, indices), "Carré"
     if freqs[0] == 3 and len(freqs) > 1 and freqs[1] == 2:
-        return 6, "Full house"
+        return (6, indices), "Full house"
     if flush:
-        return 5, "Couleur"
+        return (5, indices), "Couleur"
     if suite:
-        return 4, "Suite"
+        return (4, indices), "Suite"
     if freqs[0] == 3:
-        return 3, "Brelan"
+        return (3, indices), "Brelan"
     if freqs[0] == 2 and len(freqs) > 1 and freqs[1] == 2:
-        return 2, "Double paire"
+        return (2, indices), "Double paire"
     if freqs[0] == 2:
-        return 1, "Paire"
-    return 0, "Carte haute"
+        return (1, indices), "Paire"
+    return (0, indices), "Carte haute"
+
 
 def meilleure_main(hole_cards, community_cards):
     from itertools import combinations
     toutes = hole_cards + community_cards
     if len(toutes) < 5:
-        return 0, "Carte haute"
+        return (0, []), "Carte haute"
     meilleure = None
     desc = ""
     for combo in combinations(toutes, 5):
@@ -953,35 +954,48 @@ async def poker_showdown(interaction, game_id):
     community = game["community"]
     en_jeu = get_joueurs_en_jeu(game)
     resultats = []
-    meilleur_rang = -1
-    gagnants = []
+
     for uid in en_jeu:
         data = game["joueurs"][uid]
         rang, desc = meilleure_main(data["hole"], community)
         nom = get_nom(interaction.guild, uid)
         resultats.append((uid, nom, rang, desc, data["hole"]))
-        if rang > meilleur_rang:
-            meilleur_rang = rang
-            gagnants = [uid]
-        elif rang == meilleur_rang:
-            gagnants.append(uid)
+
+    # Trier par rang décroissant — rang est maintenant un tuple (score, [indices]) pour départager
+    resultats.sort(key=lambda x: x[2], reverse=True)
+
+    # Déterminer le seul gagnant : le premier après tri (rang le plus élevé + meilleurs kickers)
+    meilleur_rang = resultats[0][2]
+    # S'il y a strictement égalité parfaite sur tous les kickers, on partage (rare mais possible)
+    gagnants = [r for r in resultats if r[2] == meilleur_rang]
+
     gain_par_gagnant = game["pot"] // len(gagnants)
-    for uid in gagnants:
+    gagnants_ids = [r[0] for r in gagnants]
+
+    for uid in gagnants_ids:
         add_solde(uid, gain_par_gagnant)
         add_stat(uid, True, gain_par_gagnant - game["joueurs"][uid]["mise_totale"])
     for uid, data in game["joueurs"].items():
-        if uid not in gagnants:
+        if uid not in gagnants_ids:
             add_stat(uid, False, data["mise_totale"])
+
     embed = discord.Embed(title="🃏 Poker - Showdown !", color=discord.Color.gold())
     embed.add_field(name="Cartes communes", value=afficher_cartes(community), inline=False)
-    for uid, nom, rang, desc, hole in sorted(resultats, key=lambda x: x[2], reverse=True):
-        gagne_str = " 🏆 GAGNANT !" if uid in gagnants else ""
+
+    for uid, nom, rang, desc, hole in resultats:
+        est_gagnant = uid in gagnants_ids
+        gagne_str = " 🏆 GAGNANT !" if est_gagnant else ""
         embed.add_field(
             name=f"{nom}{gagne_str}",
             value=f"Cartes: {afficher_cartes(hole)}\nMain: **{desc}**\nSolde: ${get_solde(uid):.2f}",
             inline=False
         )
-    embed.add_field(name="💰 Pot distribué", value=f"${gain_par_gagnant} à chaque gagnant", inline=False)
+
+    if len(gagnants) == 1:
+        embed.add_field(name="💰 Pot gagné", value=f"**{gagnants[0][1]}** remporte **${game['pot']}** !", inline=False)
+    else:
+        embed.add_field(name="💰 Égalité parfaite !", value=f"Pot de ${game['pot']} partagé — ${gain_par_gagnant} chacun.", inline=False)
+
     del poker_games[game_id]
     await interaction.response.edit_message(embed=embed, view=None)
 
@@ -1331,6 +1345,9 @@ async def demarrer_poker(interaction, game_id):
 
 CHEVAUX = ["🐴 Éclair", "🐴 Tonnerre", "🐴 Tempête", "🐴 Rafale", "🐴 Foudre", "🐴 Mistral"]
 
+# Multiplicateurs de gains par place (1er, 2e, 3e)
+HORSE_MULTIPLICATEURS = [3.0, 2.0, 1.5]
+
 class HorseSelect(Select):
     def __init__(self, game_id, mise):
         self.game_id = game_id
@@ -1393,35 +1410,61 @@ class HorseJoinView(View):
 async def lancer_course(interaction, game_id):
     game = horse_games[game_id]
     mise = game["mise"]
+
+    # Mélanger les chevaux pour obtenir un classement aléatoire complet
     positions = list(range(len(CHEVAUX)))
     secrets.SystemRandom().shuffle(positions)
-    classement = [CHEVAUX[i] for i in positions]
-    gagnant_idx = positions[0]
-    gagnants = [uid for uid, idx in game["paris"].items() if idx == gagnant_idx]
-    nb_gagnants = len(gagnants) if gagnants else 1
-    pot_total = mise * len(game["paris"])
-    gain = pot_total // nb_gagnants if gagnants else 0
-    for uid in gagnants:
-        add_solde(uid, gain)
-        add_stat(uid, True, gain - mise)
-    for uid in game["paris"]:
-        if uid not in gagnants:
-            add_stat(uid, False, mise)
+    classement = [CHEVAUX[i] for i in positions]  # classement[0] = 1er, [1] = 2e, etc.
+
+    # Indices des chevaux aux 3 premières places
+    idx_1er = positions[0]
+    idx_2e  = positions[1]
+    idx_3e  = positions[2]
+
+    # Affichage de la course avec une barre de progression visuelle
     course_lines = []
     for place, cheval in enumerate(classement, 1):
         barre = "🟩" * (7 - place) + "⬜" * (place - 1)
-        course_lines.append(f"`{place}.` {cheval} {barre}")
+        medaille = ["🥇", "🥈", "🥉"][place - 1] if place <= 3 else f"`{place}.`"
+        course_lines.append(f"{medaille} {cheval} {barre}")
+
     embed = discord.Embed(title="🏇 Course de chevaux - Résultats !", color=discord.Color.orange())
     embed.add_field(name="🏁 Classement final", value="\n".join(course_lines), inline=False)
-    embed.add_field(name="🏆 Gagnant", value=f"**{CHEVAUX[gagnant_idx]}** remporte la course !", inline=False)
+    embed.add_field(
+        name="🏆 Podium",
+        value=(
+            f"🥇 **{classement[0]}** — x{HORSE_MULTIPLICATEURS[0]:.1f}\n"
+            f"🥈 **{classement[1]}** — x{HORSE_MULTIPLICATEURS[1]:.1f}\n"
+            f"🥉 **{classement[2]}** — x{HORSE_MULTIPLICATEURS[2]:.1f}"
+        ),
+        inline=False
+    )
+
+    # Calculer les gains pour chaque parieur selon la place de son cheval
     resultats = []
-    for uid, idx in game["paris"].items():
+    for uid, idx_cheval in game["paris"].items():
         member = interaction.guild.get_member(uid)
         name = member.display_name if member else str(uid)
-        if uid in gagnants:
-            resultats.append(f"✅ {name} ({CHEVAUX[idx]}) gagne **${gain}** ! Solde: ${get_solde(uid):.2f}")
+
+        if idx_cheval == idx_1er:
+            gain = int(mise * HORSE_MULTIPLICATEURS[0])
+            add_solde(uid, gain)
+            add_stat(uid, True, gain - mise)
+            resultats.append(f"🥇 {name} ({CHEVAUX[idx_cheval]}) gagne **${gain}** (x{HORSE_MULTIPLICATEURS[0]:.1f}) ! Solde: ${get_solde(uid):.2f}")
+        elif idx_cheval == idx_2e:
+            gain = int(mise * HORSE_MULTIPLICATEURS[1])
+            add_solde(uid, gain)
+            add_stat(uid, True, gain - mise)
+            resultats.append(f"🥈 {name} ({CHEVAUX[idx_cheval]}) gagne **${gain}** (x{HORSE_MULTIPLICATEURS[1]:.1f}) ! Solde: ${get_solde(uid):.2f}")
+        elif idx_cheval == idx_3e:
+            gain = int(mise * HORSE_MULTIPLICATEURS[2])
+            add_solde(uid, gain)
+            add_stat(uid, True, gain - mise)
+            resultats.append(f"🥉 {name} ({CHEVAUX[idx_cheval]}) gagne **${gain}** (x{HORSE_MULTIPLICATEURS[2]:.1f}) ! Solde: ${get_solde(uid):.2f}")
         else:
-            resultats.append(f"❌ {name} ({CHEVAUX[idx]}) perd **${mise}**. Solde: ${get_solde(uid):.2f}")
+            add_stat(uid, False, mise)
+            resultats.append(f"❌ {name} ({CHEVAUX[idx_cheval]}) perd **${mise}**. Solde: ${get_solde(uid):.2f}")
+
     embed.add_field(name="💰 Résultats", value="\n".join(resultats), inline=False)
     del horse_games[game_id]
     await interaction.response.edit_message(embed=embed, view=None)
@@ -1596,6 +1639,7 @@ async def course(interaction: discord.Interaction, mise: int):
     horse_games[game_id] = {"host": interaction.user.id, "mise": mise, "paris": {}}
     embed = discord.Embed(title="🏇 Course de chevaux !", description=f"Mise : **${mise}** par joueur\nChoisis ton cheval dans le menu !\nL'hôte lance quand tout le monde a parié.", color=discord.Color.orange())
     embed.add_field(name="🐴 Chevaux", value="\n".join(CHEVAUX), inline=False)
+    embed.add_field(name="🏆 Gains", value="🥇 1er place → x3.0\n🥈 2e place → x2.0\n🥉 3e place → x1.5", inline=False)
     await interaction.followup.send(embed=embed, view=HorseJoinView(game_id, mise))
 
 @tree.command(name="solde", description="Affiche ton solde !")
@@ -1767,12 +1811,12 @@ async def instructions(interaction: discord.Interaction, jeu: str):
             .add_field(name="Actions", value="• **Check** = Passer sans miser (si personne n'a misé)\n• **Suivre** = Égaler la mise courante\n• **Relancer** = Augmenter la mise\n• **Fold** = Se coucher et perdre sa mise", inline=False)
             .add_field(name="Phases", value="• **Preflop** = Cartes privées distribuées\n• **Flop** = 3 cartes communes\n• **Turn** = 4ème carte commune\n• **River** = 5ème carte commune\n• **Showdown** = Révélation automatique", inline=False)
             .add_field(name="Hiérarchie des mains", value="1. Carte haute\n2. Paire\n3. Double paire\n4. Brelan\n5. Suite\n6. Couleur\n7. Full house\n8. Carré\n9. Quinte flush\n10. Quinte flush royale 👑", inline=False)
-            .add_field(name="Gains", value="• Le pot est divisé entre les gagnants si égalité\n• Si tout le monde fold sauf un, il gagne automatiquement !", inline=False),
+            .add_field(name="Gains", value="• Un seul gagnant par partie — le meilleur kicker départage !\n• Si tout le monde fold sauf un, il gagne automatiquement !\n• Égalité parfaite sur tous les kickers = pot partagé (très rare)", inline=False),
         "course": discord.Embed(title="🏇 Instructions - Course de chevaux", color=discord.Color.orange())
-            .add_field(name="But", value="Parier sur le bon cheval pour gagner le pot !", inline=False)
+            .add_field(name="But", value="Parier sur le bon cheval pour monter sur le podium !", inline=False)
             .add_field(name="Comment jouer", value="• `/course [mise]` pour créer une course\n• Chaque joueur choisit son cheval dans le menu\n• L'hôte lance la course", inline=False)
             .add_field(name="Chevaux", value="\n".join(CHEVAUX), inline=False)
-            .add_field(name="Gains", value="• Le pot total est divisé entre ceux qui ont misé sur le gagnant\n• Perdu = mise perdue", inline=False),
+            .add_field(name="Gains", value="• 🥇 1er place → mise x3.0\n• 🥈 2e place → mise x2.0\n• 🥉 3e place → mise x1.5\n• Hors podium → mise perdue", inline=False),
     }
     await interaction.response.send_message(embed=embeds[jeu])
 
