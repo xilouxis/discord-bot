@@ -13,6 +13,7 @@ intents = discord.Intents.default()
 intents.message_content = True
 intents.reactions = True
 intents.members = True
+intents.polls = True
 
 client = discord.Client(intents=intents)
 tree = discord.app_commands.CommandTree(client)
@@ -1850,25 +1851,25 @@ CHANGELOGS = [
     {
         "version": "v1.3",
         "date": "2025-05-05",
-        "titre": "Profil & Sondages amÃ©liorÃ©s",
+        "titre": "Profil & Sondages ameliores",
         "couleur": discord.Color.blue(),
         "changements": [
-            ("âœ¨ Nouveau", "`/stats` entiÃ¨rement refait avec solde, classement serveur, streak daily, sondages, votes et gambling dans un seul embed"),
-            ("âœ¨ Nouveau", "Nouvelle table `profile` en DB â€” suivi des messages envoyÃ©s, sondages crÃ©Ã©s, votes donnÃ©s/reÃ§us et gains globaux"),
-            ("âœ¨ Nouveau", "Classement de richesse affichÃ© dans `/stats` (ex: #3 sur le serveur)"),
+            ("Nouveau :sparkles:", "`/stats` entierement refait avec solde, classement serveur, streak daily, sondages, votes et gambling dans un seul embed"),
+            ("Nouveau :sparkles:", "Nouvelle table `profile` en DB â€” suivi des messages envoyes, sondages crees, votes donnes/recus et gains globaux"),
+            ("Nouveau :sparkles:", "Classement de richesse affiche dans `/stats` (ex: #3 sur le serveur)"),
         ]
     },
     {
         "version": "v1.2",
         "date": "2025-05-04",
-        "titre": "SystÃ¨me de sondages revu",
+        "titre": "Systeme de sondages revu",
         "couleur": discord.Color.green(),
         "changements": [
-            ("âœ¨ Nouveau", "**+50$** immÃ©diatement Ã  la crÃ©ation d'un sondage"),
-            ("âœ¨ Nouveau", "Ã€ la clÃ´ture : **+30$** par voteur, **+10$ Ã— votes** au crÃ©ateur"),
-            ("âœ¨ Nouveau", "Limite d'**un seul sondage par jour** â€” le 2e est automatiquement supprimÃ©"),
-            ("âœ¨ Nouveau", "Suivi des vrais votes Discord natifs (`on_raw_poll_vote_add`) au lieu des rÃ©actions"),
-            ("ðŸ—‘ï¸ SupprimÃ©", "RÃ©compenses basÃ©es sur les rÃ©actions emoji dans `polesðŸ¤”`"),
+            ("Nouveau :sparkles:", "**+50$** immediatement a la creation d'un sondage"),
+            ("Nouveau :sparkles:", "A la cloture : **+30$** par voteur, **+10$ x votes** au createur"),
+            ("Nouveau :sparkles:", "Limite d'**un seul sondage par jour** â€” le 2e est automatiquement supprime"),
+            ("Nouveau :sparkles:", "Suivi des vrais votes Discord natifs au lieu des reactions"),
+            ("Supprime :wastebasket:", "Recompenses basees sur les reactions emoji dans `poles`"),
         ]
     },
     {
@@ -1877,9 +1878,9 @@ CHANGELOGS = [
         "titre": "Poker & Course de chevaux",
         "couleur": discord.Color.gold(),
         "changements": [
-            ("ðŸ”§ Fix", "Poker : un seul gagnant grÃ¢ce au dÃ©partage par kicker (comparaison de tuples)"),
-            ("âœ¨ Nouveau", "Course de chevaux : podium 3 places â€” ðŸ¥‡ x3.0 / ðŸ¥ˆ x2.0 / ðŸ¥‰ x1.5"),
-            ("âœ¨ Nouveau", "Affichage des mÃ©dailles et multiplicateurs dans les rÃ©sultats de course"),
+            ("Fix :wrench:", "Poker : un seul gagnant grace au departage par kicker"),
+            ("Nouveau :sparkles:", "Course de chevaux : podium 3 places â€” 1er x3.0 / 2e x2.0 / 3e x1.5"),
+            ("Nouveau :sparkles:", "Affichage des medailles et multiplicateurs dans les resultats de course"),
         ]
     },
     {
@@ -1888,10 +1889,10 @@ CHANGELOGS = [
         "titre": "Version initiale",
         "couleur": discord.Color.greyple(),
         "changements": [
-            ("ðŸŽ® Jeux", "Blackjack solo & multijoueur, Roulette, Ride the Bus, Slots, Poker Texas Hold'em, Course de chevaux"),
-            ("ðŸ’° Ã‰conomie", "Solde, salaire par message, salaire hebdomadaire, daily streak, `/donner`, `/richesse`"),
-            ("ðŸ“Š Sondages", "CrÃ©ation de sondages rÃ©compensÃ©e dans `polesðŸ¤”`, thread auto, mention du rÃ´le"),
-            ("ðŸŽ² Utilitaires", "Pile ou face, dÃ©, recherche Steam, jeux gratuits Steam, dad joke, `/instructions`"),
+            ("Jeux :video_game:", "Blackjack solo & multi, Roulette, Ride the Bus, Slots, Poker, Course de chevaux"),
+            ("Economie :coin:", "Solde, salaire par message, salaire hebdo, daily streak, `/donner`, `/richesse`"),
+            ("Sondages :bar_chart:", "Creation de sondages recompensee dans `poles`, thread auto, mention du role"),
+            ("Utilitaires :game_die:", "Pile ou face, de, recherche Steam, jeux gratuits Steam, dad joke, `/instructions`"),
         ]
     },
 ]
