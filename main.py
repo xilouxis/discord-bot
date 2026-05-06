@@ -1551,11 +1551,32 @@ async def lancer_course(interaction, game_id):
     del horse_games[game_id]
     await interaction.response.edit_message(embed=embed, view=None)
 
+
+# =================== HELPER INTERACTION ===================
+
+import time
+
+async def safe_respond(interaction: discord.Interaction, *args, **kwargs):
+    """Répond à une interaction de façon sécurisée, ignore si expirée."""
+    try:
+        await interaction.response.send_message(*args, **kwargs)
+    except discord.errors.NotFound:
+        pass  # Interaction expirée, on ignore silencieusement
+
+def is_interaction_expired(interaction: discord.Interaction) -> bool:
+    """Vérifie si l'interaction a plus de 2.5s (marge de sécurité avant 3s)."""
+    import datetime
+    created = interaction.created_at.replace(tzinfo=datetime.timezone.utc)
+    now = datetime.datetime.now(datetime.timezone.utc)
+    return (now - created).total_seconds() > 2.5
+
 # =================== COMMANDES ===================
 
 @tree.command(name="blackjack", description="Joue au blackjack solo !")
 @discord.app_commands.describe(mise="Combien tu veux miser ?")
 async def blackjack(interaction: discord.Interaction, mise: int):
+    if is_interaction_expired(interaction):
+        return
     user_id = interaction.user.id
     solde = get_solde(user_id)
     if mise <= 0:
@@ -1580,6 +1601,8 @@ async def blackjack(interaction: discord.Interaction, mise: int):
 @tree.command(name="blackjack2", description="Joue au blackjack multijoueur !")
 @discord.app_commands.describe(mise="Mise par joueur", adversaire="Le membre a inviter")
 async def blackjack2(interaction: discord.Interaction, mise: int, adversaire: discord.Member):
+    if is_interaction_expired(interaction):
+        return
     user_id = interaction.user.id
     solde = get_solde(user_id)
     if mise <= 0:
@@ -1605,6 +1628,8 @@ async def blackjack2(interaction: discord.Interaction, mise: int, adversaire: di
 @tree.command(name="roulette", description="Lance une roulette multijoueur !")
 @discord.app_commands.describe(mise="Mise par joueur")
 async def roulette(interaction: discord.Interaction, mise: int):
+    if is_interaction_expired(interaction):
+        return
     if mise <= 0:
         await interaction.response.send_message("** **La mise doit etre positive !", ephemeral=True)
         return
@@ -1616,6 +1641,8 @@ async def roulette(interaction: discord.Interaction, mise: int):
 @tree.command(name="ridethebus", description="Joue a Ride the Bus !")
 @discord.app_commands.describe(mise="Combien tu veux miser ?")
 async def ridethebus(interaction: discord.Interaction, mise: int):
+    if is_interaction_expired(interaction):
+        return
     user_id = interaction.user.id
     solde = get_solde(user_id)
     if mise <= 0:
@@ -1637,6 +1664,8 @@ async def ridethebus(interaction: discord.Interaction, mise: int):
 @tree.command(name="slots", description="Lance les slots !")
 @discord.app_commands.describe(mise="Combien tu veux miser ?")
 async def slots(interaction: discord.Interaction, mise: int):
+    if is_interaction_expired(interaction):
+        return
     user_id = interaction.user.id
     solde = get_solde(user_id)
     if mise <= 0:
@@ -1676,6 +1705,8 @@ async def slots(interaction: discord.Interaction, mise: int):
 @tree.command(name="poker", description="Lance une partie de Poker Texas Hold'em (2-6 joueurs) !")
 @discord.app_commands.describe(blind="Mise de depart (blind) par joueur")
 async def poker(interaction: discord.Interaction, blind: int):
+    if is_interaction_expired(interaction):
+        return
     if blind <= 0:
         await interaction.response.send_message("** **La mise doit etre positive !", ephemeral=True)
         return
@@ -1713,19 +1744,22 @@ async def poker(interaction: discord.Interaction, blind: int):
 @tree.command(name="course", description="Lance une course de chevaux multijoueur !")
 @discord.app_commands.describe(mise="Mise par joueur")
 async def course(interaction: discord.Interaction, mise: int):
-    await interaction.response.defer()
+    if is_interaction_expired(interaction):
+        return
     if mise <= 0:
-        await interaction.followup.send("** **La mise doit etre positive !", ephemeral=True)
+        await interaction.response.send_message("❌ La mise doit être positive !", ephemeral=True)
         return
     game_id = secrets.token_hex(8)
     horse_games[game_id] = {"host": interaction.user.id, "mise": mise, "paris": {}}
-    embed = discord.Embed(title="🏇 Course de chevaux !", description=f"Mise : **${mise}** par joueur\nChoisis ton cheval dans le menu !\nL'hote lance quand tout le monde a parie.", color=discord.Color.orange())
+    embed = discord.Embed(title="🏇 Course de chevaux !", description=f"Mise : **${mise}** par joueur\nChoisis ton cheval dans le menu !\nL'hôte lance quand tout le monde a parié.", color=discord.Color.orange())
     embed.add_field(name="🐴 Chevaux", value="\n".join(CHEVAUX), inline=False)
-    embed.add_field(name="💰 Gains", value="1er 1er place -> x3.0\n2e 2e place -> x2.0\n3e 3e place -> x1.5", inline=False)
-    await interaction.followup.send(embed=embed, view=HorseJoinView(game_id, mise))
+    embed.add_field(name="🏆 Gains", value="🥇 1er place → x3.0\n🥈 2e place → x2.0\n🥉 3e place → x1.5", inline=False)
+    await interaction.response.send_message(embed=embed, view=HorseJoinView(game_id, mise))
 
 @tree.command(name="solde", description="Affiche ton solde !")
 async def solde(interaction: discord.Interaction, membre: discord.Member = None):
+    if is_interaction_expired(interaction):
+        return
     target = membre or interaction.user
     montant = get_solde(target.id)
     embed = discord.Embed(title=f"💰 Solde de {target.display_name}", description=f"**${montant:.2f}**", color=discord.Color.green())
@@ -1733,6 +1767,8 @@ async def solde(interaction: discord.Interaction, membre: discord.Member = None)
 
 @tree.command(name="richesse", description="Top 10 des plus riches du serveur !")
 async def richesse(interaction: discord.Interaction):
+    if is_interaction_expired(interaction):
+        return
     conn = get_conn()
     cur = conn.cursor()
     cur.execute("SELECT user_id, solde FROM bank ORDER BY solde DESC LIMIT 10")
@@ -1749,6 +1785,8 @@ async def richesse(interaction: discord.Interaction):
 @tree.command(name="donner", description="Donne de l'argent a quelqu'un !")
 @discord.app_commands.describe(membre="Le membre a qui donner", montant="Combien donner")
 async def donner(interaction: discord.Interaction, membre: discord.Member, montant: int):
+    if is_interaction_expired(interaction):
+        return
     user_id = interaction.user.id
     if montant <= 0:
         await interaction.response.send_message("** **Le montant doit etre positif !", ephemeral=True)
@@ -1776,6 +1814,8 @@ async def donner(interaction: discord.Interaction, membre: discord.Member, monta
 @tree.command(name="stats", description="Affiche les statistiques completes d'un membre !")
 @discord.app_commands.describe(membre="Le membre dont tu veux voir les stats")
 async def stats(interaction: discord.Interaction, membre: discord.Member = None):
+    if is_interaction_expired(interaction):
+        return
     target = membre or interaction.user
     uid = target.id
 
@@ -1939,6 +1979,8 @@ class ChangelogView(View):
 
 @tree.command(name="changelog", description="Affiche les mises a jour du bot !")
 async def changelog(interaction: discord.Interaction):
+    if is_interaction_expired(interaction):
+        return
     view = ChangelogView(page=0)
     await interaction.response.send_message(embed=view.build_embed(), view=view)
 
@@ -1966,12 +2008,16 @@ async def steamgratuit(interaction: discord.Interaction):
 
 @tree.command(name="pileouface", description="Lance une piece !")
 async def pileouface(interaction: discord.Interaction):
+    if is_interaction_expired(interaction):
+        return
     resultat = ["Pile", "Face"][secrets.randbelow(2)]
     await interaction.response.send_message(resultat)
 
 @tree.command(name="de", description="Lance un de !")
 @discord.app_commands.describe(faces="Nombre de faces du de (defaut: 6)")
 async def de(interaction: discord.Interaction, faces: int = 6):
+    if is_interaction_expired(interaction):
+        return
     resultat = secrets.randbelow(faces) + 1
     await interaction.response.send_message(f"Tu as obtenu : **{resultat}** (d{faces})")
 
@@ -2021,6 +2067,8 @@ async def dadjoke(interaction: discord.Interaction):
     discord.app_commands.Choice(name="Course de chevaux", value="course"),
 ])
 async def instructions(interaction: discord.Interaction, jeu: str):
+    if is_interaction_expired(interaction):
+        return
     embeds = {
         "blackjack": discord.Embed(title="Instructions - Blackjack", color=discord.Color.green())
             .add_field(name="But", value="Avoir une main la plus proche de 21 sans depasser !", inline=False)
@@ -2059,6 +2107,8 @@ async def instructions(interaction: discord.Interaction, jeu: str):
 
 @tree.command(name="daily", description="Reclame ton bonus quotidien ! (streak jusqu'a 250$/jour)")
 async def daily(interaction: discord.Interaction):
+    if is_interaction_expired(interaction):
+        return
     user_id = interaction.user.id
     montant, streak, status = claim_daily(user_id)
 
@@ -2089,6 +2139,8 @@ async def daily(interaction: discord.Interaction):
 @tree.command(name="retirer", description="[Modo] Retire de l'argent a un membre avec un role moins important")
 @discord.app_commands.describe(membre="Le membre cible", montant="Montant a retirer", raison="Raison du retrait")
 async def retirer(interaction: discord.Interaction, membre: discord.Member, montant: int, raison: str = "Aucune raison fournie"):
+    if is_interaction_expired(interaction):
+        return
     role_admin = discord.utils.get(interaction.guild.roles, name="Admins")
     if role_admin is None:
         await interaction.response.send_message("** **Le role 'Admins' n'existe pas sur ce serveur !", ephemeral=True)
