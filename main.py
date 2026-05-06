@@ -388,17 +388,17 @@ def afficher_main(main):
 def resultat_bj(total_joueur, total_bot, mise, user_id):
     if total_joueur > 21:
         add_stat(user_id, False, mise)
-        return f"Bust ! -${mise}", discord.Color.red()
+        return f"💥 Bust ! -${mise}", discord.Color.red()
     elif total_bot > 21 or total_joueur > total_bot:
         add_solde(user_id, mise * 2)
         add_stat(user_id, True, mise)
-        return f"Gagne ! +${mise}", discord.Color.green()
+        return f"🎉 Gagné ! +${mise}", discord.Color.green()
     elif total_joueur == total_bot:
         add_solde(user_id, mise)
         return f"🤝 Égalité ! Mise remboursée.", discord.Color.yellow()
     else:
         add_stat(user_id, False, mise)
-        return f"Perdu ! -${mise}", discord.Color.red()
+        return f"😢 Perdu ! -${mise}", discord.Color.red()
 
 # =================== BLACKJACK SOLO ===================
 
@@ -420,7 +420,7 @@ class BlackjackView(View):
             del blackjack_games[self.user_id]
             self.stop()
             add_stat(self.user_id, False, self.mise)
-            embed = discord.Embed(title="🃏 Blackjack - Perdu !", description=f"Bust ! Tu perds **${self.mise}**", color=discord.Color.red())
+            embed = discord.Embed(title="🃏 Blackjack - Perdu !", description=f"💥 Bust ! Tu perds **${self.mise}**", color=discord.Color.red())
             embed.add_field(name="Ta main 🃏", value=f"{afficher_main(game['joueur'])} → **{total}**", inline=False)
             embed.add_field(name="💰 Solde", value=f"${get_solde(self.user_id):.2f}", inline=False)
             await interaction.response.edit_message(embed=embed, view=None)
@@ -1804,7 +1804,7 @@ async def donner(interaction: discord.Interaction, membre: discord.Member, monta
     add_solde(user_id, -montant)
     add_solde(membre.id, montant)
     embed = discord.Embed(title="💸 Transfert effectué !", color=discord.Color.green())
-    embed.add_field(name="De", value=interaction.user.display_name, inline=True)
+    embed.add_field(name="💰 De", value=interaction.user.display_name, inline=True)
     embed.add_field(name="À", value=membre.display_name, inline=True)
     embed.add_field(name="💵 Montant", value=f"${montant}", inline=True)
     embed.add_field(name="💰 Ton solde", value=f"${get_solde(user_id):.2f}", inline=False)
@@ -1958,7 +1958,7 @@ class ChangelogView(View):
     def build_embed(self):
         cl = CHANGELOGS[self.page]
         embed = discord.Embed(
-            title=f"Changelog {cl['version']} - {cl['titre']}",
+            title=f"📋 Changelog {cl['version']} - {cl['titre']}",
             description=f"Date : {cl['date']}",
             color=cl["couleur"]
         )
@@ -2165,7 +2165,7 @@ async def retirer(interaction: discord.Interaction, membre: discord.Member, mont
     embed.add_field(name="👤 Membre", value=membre.display_name, inline=True)
     embed.add_field(name="💸 Montant retiré", value=f"${retrait_reel}", inline=True)
     embed.add_field(name="📝 Raison", value=raison, inline=False)
-    embed.add_field(name=f"Nouveau solde de {membre.display_name}", value=f"${get_solde(membre.id):.2f}", inline=False)
+    embed.add_field(name=f"💰 Nouveau solde de {membre.display_name}", value=f"${get_solde(membre.id):.2f}", inline=False)
     await interaction.response.send_message(embed=embed)
     try:
         await membre.send(f"**{interaction.user.display_name}** t'a retire **${retrait_reel}**.\nRaison: {raison}\nNouveau solde: ${get_solde(membre.id):.2f}")
