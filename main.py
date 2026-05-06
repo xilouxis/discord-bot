@@ -1556,17 +1556,16 @@ async def lancer_course(interaction, game_id):
 @tree.command(name="blackjack", description="Joue au blackjack solo !")
 @discord.app_commands.describe(mise="Combien tu veux miser ?")
 async def blackjack(interaction: discord.Interaction, mise: int):
-    await interaction.response.defer()
     user_id = interaction.user.id
     solde = get_solde(user_id)
     if mise <= 0:
-        await interaction.followup.send("** **La mise doit etre positive !", ephemeral=True)
+        await interaction.response.send_message("** **La mise doit etre positive !", ephemeral=True)
         return
     if mise > solde:
-        await interaction.followup.send(f"** **Pas assez d'argent ! Solde: ${solde:.2f}", ephemeral=True)
+        await interaction.response.send_message(f"** **Pas assez d'argent ! Solde: ${solde:.2f}", ephemeral=True)
         return
     if user_id in blackjack_games:
-        await interaction.followup.send("** **Partie en cours !", ephemeral=True)
+        await interaction.response.send_message("** **Partie en cours !", ephemeral=True)
         return
     add_solde(user_id, -mise)
     main_joueur = [nouvelle_carte(), nouvelle_carte()]
@@ -1576,22 +1575,21 @@ async def blackjack(interaction: discord.Interaction, mise: int):
     embed.add_field(name="Ta main", value=f"{afficher_main(main_joueur)} -> **{valeur_main(main_joueur)}**", inline=False)
     embed.add_field(name="Croupier", value=f"{main_bot[0]} | ?", inline=False)
     embed.add_field(name="Mise", value=f"${mise}", inline=False)
-    await interaction.followup.send(embed=embed, view=BlackjackView(user_id, mise))
+    await interaction.response.send_message(embed=embed, view=BlackjackView(user_id, mise))
 
 @tree.command(name="blackjack2", description="Joue au blackjack multijoueur !")
 @discord.app_commands.describe(mise="Mise par joueur", adversaire="Le membre a inviter")
 async def blackjack2(interaction: discord.Interaction, mise: int, adversaire: discord.Member):
-    await interaction.response.defer()
     user_id = interaction.user.id
     solde = get_solde(user_id)
     if mise <= 0:
-        await interaction.followup.send("** **La mise doit etre positive !", ephemeral=True)
+        await interaction.response.send_message("** **La mise doit etre positive !", ephemeral=True)
         return
     if mise > solde:
-        await interaction.followup.send(f"** **Pas assez d'argent ! Solde: ${solde:.2f}", ephemeral=True)
+        await interaction.response.send_message(f"** **Pas assez d'argent ! Solde: ${solde:.2f}", ephemeral=True)
         return
     if adversaire.id == user_id:
-        await interaction.followup.send("** **Tu peux pas jouer contre toi-meme !", ephemeral=True)
+        await interaction.response.send_message("** **Tu peux pas jouer contre toi-meme !", ephemeral=True)
         return
     add_solde(user_id, -mise)
     game_id = secrets.token_hex(8)
@@ -1602,31 +1600,29 @@ async def blackjack2(interaction: discord.Interaction, mise: int, adversaire: di
     embed = discord.Embed(title="Blackjack Multijoueur", description=f"{adversaire.mention} tu es invite a jouer ! Mise: **${mise}**", color=discord.Color.green())
     embed.add_field(name=f"{interaction.user.display_name}", value=f"{afficher_main(blackjack_multi_games[game_id]['joueurs'][user_id]['main'])}", inline=False)
     embed.add_field(name="Croupier", value=f"{blackjack_multi_games[game_id]['bot'][0]} | ?", inline=False)
-    await interaction.followup.send(embed=embed, view=JoinBlackjackView(game_id, user_id, mise))
+    await interaction.response.send_message(embed=embed, view=JoinBlackjackView(game_id, user_id, mise))
 
 @tree.command(name="roulette", description="Lance une roulette multijoueur !")
 @discord.app_commands.describe(mise="Mise par joueur")
 async def roulette(interaction: discord.Interaction, mise: int):
-    await interaction.response.defer()
     if mise <= 0:
-        await interaction.followup.send("** **La mise doit etre positive !", ephemeral=True)
+        await interaction.response.send_message("** **La mise doit etre positive !", ephemeral=True)
         return
     game_id = secrets.token_hex(8)
     roulette_games[game_id] = {"host": interaction.user.id, "mise": mise, "paris": {}}
     embed = discord.Embed(title="Roulette", description=f"Mise : **${mise}** par joueur\nPariez sur Rouge, Noir, Pair ou Impair !\nL'hote lance quand tout le monde a parie.", color=discord.Color.gold())
-    await interaction.followup.send(embed=embed, view=RouletteView(game_id))
+    await interaction.response.send_message(embed=embed, view=RouletteView(game_id))
 
 @tree.command(name="ridethebus", description="Joue a Ride the Bus !")
 @discord.app_commands.describe(mise="Combien tu veux miser ?")
 async def ridethebus(interaction: discord.Interaction, mise: int):
-    await interaction.response.defer()
     user_id = interaction.user.id
     solde = get_solde(user_id)
     if mise <= 0:
-        await interaction.followup.send("** **La mise doit etre positive !", ephemeral=True)
+        await interaction.response.send_message("** **La mise doit etre positive !", ephemeral=True)
         return
     if mise > solde:
-        await interaction.followup.send(f"** **Pas assez d'argent ! Solde: ${solde:.2f}", ephemeral=True)
+        await interaction.response.send_message(f"** **Pas assez d'argent ! Solde: ${solde:.2f}", ephemeral=True)
         return
     add_solde(user_id, -mise)
     carte, couleur_carte = nouvelle_carte_bus()
@@ -1636,19 +1632,18 @@ async def ridethebus(interaction: discord.Interaction, mise: int):
     embed.add_field(name="Mise", value=f"${mise}", inline=False)
     embed.add_field(name="Etape 1", value="La prochaine carte sera **Rouge** ou **Noir** ?", inline=False)
     embed.set_footer(text="Cash Out a tout moment pour repartir avec tes gains !")
-    await interaction.followup.send(embed=embed, view=BusEtape1View(user_id))
+    await interaction.response.send_message(embed=embed, view=BusEtape1View(user_id))
 
 @tree.command(name="slots", description="Lance les slots !")
 @discord.app_commands.describe(mise="Combien tu veux miser ?")
 async def slots(interaction: discord.Interaction, mise: int):
-    await interaction.response.defer()
     user_id = interaction.user.id
     solde = get_solde(user_id)
     if mise <= 0:
-        await interaction.followup.send("** **La mise doit etre positive !", ephemeral=True)
+        await interaction.response.send_message("** **La mise doit etre positive !", ephemeral=True)
         return
     if mise > solde:
-        await interaction.followup.send(f"** **Pas assez d'argent ! Solde: ${solde:.2f}", ephemeral=True)
+        await interaction.response.send_message(f"** **Pas assez d'argent ! Solde: ${solde:.2f}", ephemeral=True)
         return
     add_solde(user_id, -mise)
     symboles = ["Cerise", "Citron", "Orange", "Etoile", "Diamant", "7"]
@@ -1676,18 +1671,17 @@ async def slots(interaction: discord.Interaction, mise: int):
         msg = f"{ligne}\n\nPerdu ! -${mise}"
     embed = discord.Embed(title="Slots", description=msg, color=discord.Color.gold())
     embed.add_field(name="Solde", value=f"${get_solde(user_id):.2f}", inline=False)
-    await interaction.followup.send(embed=embed)
+    await interaction.response.send_message(embed=embed)
 
 @tree.command(name="poker", description="Lance une partie de Poker Texas Hold'em (2-6 joueurs) !")
 @discord.app_commands.describe(blind="Mise de depart (blind) par joueur")
 async def poker(interaction: discord.Interaction, blind: int):
-    await interaction.response.defer()
     if blind <= 0:
-        await interaction.followup.send("** **La mise doit etre positive !", ephemeral=True)
+        await interaction.response.send_message("** **La mise doit etre positive !", ephemeral=True)
         return
     solde = get_solde(interaction.user.id)
     if blind > solde:
-        await interaction.followup.send(f"** **Pas assez d'argent ! Solde: ${solde:.2f}", ephemeral=True)
+        await interaction.response.send_message(f"** **Pas assez d'argent ! Solde: ${solde:.2f}", ephemeral=True)
         return
     game_id = secrets.token_hex(8)
     add_solde(interaction.user.id, -blind)
@@ -1714,7 +1708,7 @@ async def poker(interaction: discord.Interaction, blind: int):
     embed.add_field(name="Pot", value=f"${blind}", inline=False)
     embed.add_field(name="Joueurs (1/6)", value=interaction.user.display_name, inline=False)
     embed.set_footer(text="Rejoins la partie avant que l'hote la lance !")
-    await interaction.followup.send(embed=embed, view=PokerJoinView(game_id, blind))
+    await interaction.response.send_message(embed=embed, view=PokerJoinView(game_id, blind))
 
 @tree.command(name="course", description="Lance une course de chevaux multijoueur !")
 @discord.app_commands.describe(mise="Mise par joueur")
@@ -1732,15 +1726,13 @@ async def course(interaction: discord.Interaction, mise: int):
 
 @tree.command(name="solde", description="Affiche ton solde !")
 async def solde(interaction: discord.Interaction, membre: discord.Member = None):
-    await interaction.response.defer()
     target = membre or interaction.user
     montant = get_solde(target.id)
     embed = discord.Embed(title=f"Solde de {target.display_name}", description=f"**${montant:.2f}**", color=discord.Color.green())
-    await interaction.followup.send(embed=embed)
+    await interaction.response.send_message(embed=embed)
 
 @tree.command(name="richesse", description="Top 10 des plus riches du serveur !")
 async def richesse(interaction: discord.Interaction):
-    await interaction.response.defer()
     conn = get_conn()
     cur = conn.cursor()
     cur.execute("SELECT user_id, solde FROM bank ORDER BY solde DESC LIMIT 10")
@@ -1752,25 +1744,24 @@ async def richesse(interaction: discord.Interaction):
         member = interaction.guild.get_member(int(user_id))
         name = member.display_name if member else "Inconnu"
         embed.add_field(name=f"#{i+1} {name}", value=f"${s:.2f}", inline=False)
-    await interaction.followup.send(embed=embed)
+    await interaction.response.send_message(embed=embed)
 
 @tree.command(name="donner", description="Donne de l'argent a quelqu'un !")
 @discord.app_commands.describe(membre="Le membre a qui donner", montant="Combien donner")
 async def donner(interaction: discord.Interaction, membre: discord.Member, montant: int):
-    await interaction.response.defer()
     user_id = interaction.user.id
     if montant <= 0:
-        await interaction.followup.send("** **Le montant doit etre positif !", ephemeral=True)
+        await interaction.response.send_message("** **Le montant doit etre positif !", ephemeral=True)
         return
     if membre.id == user_id:
-        await interaction.followup.send("** **Tu peux pas te donner de l'argent a toi-meme !", ephemeral=True)
+        await interaction.response.send_message("** **Tu peux pas te donner de l'argent a toi-meme !", ephemeral=True)
         return
     if membre.bot:
-        await interaction.followup.send("** **Tu peux pas donner de l'argent a un bot !", ephemeral=True)
+        await interaction.response.send_message("** **Tu peux pas donner de l'argent a un bot !", ephemeral=True)
         return
     solde = get_solde(user_id)
     if montant > solde:
-        await interaction.followup.send(f"** **Pas assez d'argent ! Solde: ${solde:.2f}", ephemeral=True)
+        await interaction.response.send_message(f"** **Pas assez d'argent ! Solde: ${solde:.2f}", ephemeral=True)
         return
     add_solde(user_id, -montant)
     add_solde(membre.id, montant)
@@ -1780,12 +1771,11 @@ async def donner(interaction: discord.Interaction, membre: discord.Member, monta
     embed.add_field(name="Montant", value=f"${montant}", inline=True)
     embed.add_field(name="Ton solde", value=f"${get_solde(user_id):.2f}", inline=False)
     embed.add_field(name=f"Solde de {membre.display_name}", value=f"${get_solde(membre.id):.2f}", inline=False)
-    await interaction.followup.send(embed=embed)
+    await interaction.response.send_message(embed=embed)
 
 @tree.command(name="stats", description="Affiche les statistiques completes d'un membre !")
 @discord.app_commands.describe(membre="Le membre dont tu veux voir les stats")
 async def stats(interaction: discord.Interaction, membre: discord.Member = None):
-    await interaction.response.defer()
     target = membre or interaction.user
     uid = target.id
 
@@ -1854,7 +1844,7 @@ async def stats(interaction: discord.Interaction, membre: discord.Member = None)
         inline=False
     )
 
-    await interaction.followup.send(embed=embed)
+    await interaction.response.send_message(embed=embed)
 
 # =================== CHANGELOGS ===================
 
@@ -1949,9 +1939,8 @@ class ChangelogView(View):
 
 @tree.command(name="changelog", description="Affiche les mises a jour du bot !")
 async def changelog(interaction: discord.Interaction):
-    await interaction.response.defer()
     view = ChangelogView(page=0)
-    await interaction.followup.send(embed=view.build_embed(), view=view)
+    await interaction.response.send_message(embed=view.build_embed(), view=view)
 
 @tree.command(name="steamgratuit", description="Affiche les jeux gratuits a 100% sur Steam !")
 async def steamgratuit(interaction: discord.Interaction):
@@ -1977,16 +1966,14 @@ async def steamgratuit(interaction: discord.Interaction):
 
 @tree.command(name="pileouface", description="Lance une piece !")
 async def pileouface(interaction: discord.Interaction):
-    await interaction.response.defer()
     resultat = ["Pile", "Face"][secrets.randbelow(2)]
-    await interaction.followup.send(resultat)
+    await interaction.response.send_message(resultat)
 
 @tree.command(name="de", description="Lance un de !")
 @discord.app_commands.describe(faces="Nombre de faces du de (defaut: 6)")
 async def de(interaction: discord.Interaction, faces: int = 6):
-    await interaction.response.defer()
     resultat = secrets.randbelow(faces) + 1
-    await interaction.followup.send(f"Tu as obtenu : **{resultat}** (d{faces})")
+    await interaction.response.send_message(f"Tu as obtenu : **{resultat}** (d{faces})")
 
 @tree.command(name="steam", description="Cherche un jeu sur Steam !")
 @discord.app_commands.describe(jeu="Le nom du jeu a chercher")
@@ -2034,7 +2021,6 @@ async def dadjoke(interaction: discord.Interaction):
     discord.app_commands.Choice(name="Course de chevaux", value="course"),
 ])
 async def instructions(interaction: discord.Interaction, jeu: str):
-    await interaction.response.defer()
     embeds = {
         "blackjack": discord.Embed(title="Instructions - Blackjack", color=discord.Color.green())
             .add_field(name="But", value="Avoir une main la plus proche de 21 sans depasser !", inline=False)
@@ -2069,11 +2055,10 @@ async def instructions(interaction: discord.Interaction, jeu: str):
             .add_field(name="Chevaux", value="\n".join(CHEVAUX), inline=False)
             .add_field(name="Gains", value="• 1er 1er place -> mise x3.0\n• 2e 2e place -> mise x2.0\n• 3e 3e place -> mise x1.5\n• Hors podium -> mise perdue", inline=False),
     }
-    await interaction.followup.send(embed=embeds[jeu])
+    await interaction.response.send_message(embed=embeds[jeu])
 
 @tree.command(name="daily", description="Reclame ton bonus quotidien ! (streak jusqu'a 250$/jour)")
 async def daily(interaction: discord.Interaction):
-    await interaction.response.defer()
     user_id = interaction.user.id
     montant, streak, status = claim_daily(user_id)
 
@@ -2083,7 +2068,7 @@ async def daily(interaction: discord.Interaction):
         embed.add_field(name="Streak actuel", value=f"Jour {info['streak']}/{DAILY_MAX_STREAK}", inline=True)
         embed.add_field(name="Prochain daily", value="Demain !", inline=True)
         embed.add_field(name="Solde", value=f"${get_solde(user_id):.2f}", inline=False)
-        await interaction.followup.send(embed=embed, ephemeral=True)
+        await interaction.response.send_message(embed=embed, ephemeral=True)
         return
 
     next_streak = min(streak + 1, DAILY_MAX_STREAK)
@@ -2099,27 +2084,26 @@ async def daily(interaction: discord.Interaction):
     else:
         embed.add_field(name="Streak MAX !", value=f"Tu es au maximum - **+${DAILY_MAX_BONUS}**/jour !", inline=False)
     embed.add_field(name="Solde", value=f"${get_solde(user_id):.2f}", inline=False)
-    await interaction.followup.send(embed=embed)
+    await interaction.response.send_message(embed=embed)
 
 @tree.command(name="retirer", description="[Modo] Retire de l'argent a un membre avec un role moins important")
 @discord.app_commands.describe(membre="Le membre cible", montant="Montant a retirer", raison="Raison du retrait")
 async def retirer(interaction: discord.Interaction, membre: discord.Member, montant: int, raison: str = "Aucune raison fournie"):
-    await interaction.response.defer()
     role_admin = discord.utils.get(interaction.guild.roles, name="Admins")
     if role_admin is None:
-        await interaction.followup.send("** **Le role 'Admins' n'existe pas sur ce serveur !", ephemeral=True)
+        await interaction.response.send_message("** **Le role 'Admins' n'existe pas sur ce serveur !", ephemeral=True)
         return
     if interaction.user.top_role < role_admin:
-        await interaction.followup.send("** **Tu dois avoir le role **Admins** ou superieur pour utiliser cette commande !", ephemeral=True)
+        await interaction.response.send_message("** **Tu dois avoir le role **Admins** ou superieur pour utiliser cette commande !", ephemeral=True)
         return
     if membre.bot:
-        await interaction.followup.send("** **Tu peux pas retirer de l'argent a un bot !", ephemeral=True)
+        await interaction.response.send_message("** **Tu peux pas retirer de l'argent a un bot !", ephemeral=True)
         return
     if membre.id == interaction.user.id:
-        await interaction.followup.send("** **Tu peux pas te retirer de l'argent a toi-meme !", ephemeral=True)
+        await interaction.response.send_message("** **Tu peux pas te retirer de l'argent a toi-meme !", ephemeral=True)
         return
     if montant <= 0:
-        await interaction.followup.send("** **Le montant doit etre positif !", ephemeral=True)
+        await interaction.response.send_message("** **Le montant doit etre positif !", ephemeral=True)
         return
     solde_cible = get_solde(membre.id)
     retrait_reel = min(montant, solde_cible)
@@ -2130,7 +2114,7 @@ async def retirer(interaction: discord.Interaction, membre: discord.Member, mont
     embed.add_field(name="Montant retire", value=f"${retrait_reel}", inline=True)
     embed.add_field(name="Raison", value=raison, inline=False)
     embed.add_field(name=f"Nouveau solde de {membre.display_name}", value=f"${get_solde(membre.id):.2f}", inline=False)
-    await interaction.followup.send(embed=embed)
+    await interaction.response.send_message(embed=embed)
     try:
         await membre.send(f"**{interaction.user.display_name}** t'a retire **${retrait_reel}**.\nRaison: {raison}\nNouveau solde: ${get_solde(membre.id):.2f}")
     except:
