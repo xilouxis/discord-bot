@@ -2136,6 +2136,115 @@ async def retirer(interaction: discord.Interaction, membre: discord.Member, mont
     except:
         pass
 
+
+@tree.command(name="calc", description="Calcule une expression mathématique !")
+@discord.app_commands.describe(expression="Ex: 150 * 3 + 20 / 2")
+async def calc(interaction: discord.Interaction, expression: str):
+    import math
+    allowed = set("0123456789+-*/().%, e")
+    allowed_words = {"sin", "cos", "tan", "sqrt", "log", "pi", "abs", "round", "floor", "ceil"}
+    expr_clean = expression.replace(" ", "").lower()
+    safe_chars = all(c in allowed for c in expr_clean if not c.isalpha())
+    words_in_expr = set(''.join(c if c.isalpha() else ' ' for c in expr_clean).split())
+    safe_words = words_in_expr.issubset(allowed_words)
+    if not (safe_chars and safe_words):
+        await interaction.response.send_message("❌ Expression invalide ! Utilise seulement des chiffres et opérateurs (+, -, *, /, **, %, parenthèses).", ephemeral=True)
+        return
+    try:
+        safe_globals = {
+            "__builtins__": {},
+            "sin": math.sin, "cos": math.cos, "tan": math.tan,
+            "sqrt": math.sqrt, "log": math.log, "pi": math.pi,
+            "abs": abs, "round": round,
+            "floor": math.floor, "ceil": math.ceil,
+            "e": math.e
+        }
+        resultat = eval(expression, safe_globals)
+        if isinstance(resultat, float) and resultat.is_integer():
+            resultat = int(resultat)
+        embed = discord.Embed(title="🧮 Calculatrice", color=discord.Color.blue())
+        embed.add_field(name="Expression", value=f"`{expression}`", inline=False)
+        embed.add_field(name="Résultat", value=f"**{resultat}**", inline=False)
+    except ZeroDivisionError:
+        await interaction.response.send_message("❌ Division par zéro !", ephemeral=True)
+        return
+    except Exception:
+        await interaction.response.send_message("❌ Expression invalide !", ephemeral=True)
+        return
+    await interaction.response.send_message(embed=embed)
+
+@tree.command(name="serverinfo", description="Affiche les informations du serveur !")
+async def serverinfo(interaction: discord.Interaction):
+    guild = interaction.guild
+    text_channels = len(guild.text_channels)
+    voice_channels = len(guild.voice_channels)
+    categories = len(guild.categories)
+    total_membres = guild.member_count
+    bots = sum(1 for m in guild.members if m.bot)
+    humains = total_membres - bots
+    created_at = guild.created_at.strftime("%d/%m/%Y")
+    boost_level = guild.premium_tier
+    boost_count = guild.premium_subscription_count
+    nb_roles = len(guild.roles) - 1
+    embed = discord.Embed(title=f"📋 {guild.name}", color=discord.Color.blurple())
+    if guild.icon:
+        embed.set_thumbnail(url=guild.icon.url)
+    embed.add_field(name="👑 Propriétaire", value=guild.owner.display_name if guild.owner else "Inconnu", inline=True)
+    embed.add_field(name="📅 Créé le", value=created_at, inline=True)
+    embed.add_field(name="🆔 ID", value=str(guild.id), inline=True)
+    embed.add_field(name="👥 Membres", value=f"Total : **{total_membres}**\nHumains : **{humains}** | Bots : **{bots}**", inline=True)
+    embed.add_field(name="💬 Salons", value=f"Texte : **{text_channels}** | Vocal : **{voice_channels}**\nCatégories : **{categories}**", inline=True)
+    embed.add_field(name="🎭 Rôles", value=f"**{nb_roles}** rôles", inline=True)
+    embed.add_field(name="✨ Boost", value=f"Niveau **{boost_level}** — **{boost_count}** boost(s)", inline=False)
+    if guild.description:
+        embed.add_field(name="📝 Description", value=guild.description, inline=False)
+    embed.set_footer(text=f"Demandé par {interaction.user.display_name}")
+    await interaction.response.send_message(embed=embed)
+
+@tree.command(name="meme", description="Affiche un meme aléatoire !")
+async def meme(interaction: discord.Interaction):
+    await interaction.response.defer()
+    subreddits = ["memes", "dankmemes", "me_irl", "funny", "AdviceAnimals"]
+    secrets.SystemRandom().shuffle(subreddits)
+    images = []
+    async with aiohttp.ClientSession() as session:
+        for subreddit in subreddits:
+            try:
+                async with session.get(
+                    f"https://www.reddit.com/r/{subreddit}/hot.json?limit=50",
+                    headers={
+                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                        "Accept": "application/json",
+                    },
+                    timeout=aiohttp.ClientTimeout(total=10)
+                ) as resp:
+                    if resp.status != 200:
+                        continue
+                    data = await resp.json()
+                posts = data["data"]["children"]
+                images = [
+                    (p["data"], subreddit) for p in posts
+                    if not p["data"].get("over_18", False)
+                    and not p["data"].get("stickied", False)
+                    and p["data"].get("url", "").endswith((".jpg", ".jpeg", ".png", ".gif"))
+                ]
+                if images:
+                    break
+            except Exception:
+                continue
+    if not images:
+        await interaction.followup.send("❌ Aucun meme trouvé, réessaie dans quelques secondes !", ephemeral=True)
+        return
+    post, sub = images[secrets.randbelow(len(images))]
+    embed = discord.Embed(
+        title=post["title"][:256],
+        url=f"https://reddit.com{post['permalink']}",
+        color=discord.Color.orange()
+    )
+    embed.set_image(url=post["url"])
+    embed.set_footer(text=f"👍 {post['ups']} | r/{sub}")
+    await interaction.followup.send(embed=embed)
+
 # =================== EVENTS ===================
 
 @client.event
