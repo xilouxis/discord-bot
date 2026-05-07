@@ -2233,36 +2233,44 @@ async def serverinfo(interaction: discord.Interaction):
 async def meme(interaction: discord.Interaction):
     await interaction.response.defer()
     subreddits = ["memes", "dankmemes", "me_irl", "funny", "AdviceAnimals"]
-    subreddit = subreddits[secrets.randbelow(len(subreddits))]
+    secrets.SystemRandom().shuffle(subreddits)
+    images = []
     async with aiohttp.ClientSession() as session:
-        async with session.get(
-            f"https://www.reddit.com/r/{subreddit}/hot.json?limit=50",
-            headers={"User-Agent": "DiscordBot/1.0"}
-        ) as resp:
-            if resp.status != 200:
-                await interaction.followup.send("❌ Impossible de récupérer un meme en ce moment !", ephemeral=True)
-                return
-            data = await resp.json()
-    posts = data["data"]["children"]
-    # Filtrer : images seulement, pas NSFW, pas épinglés
-    images = [
-        p["data"] for p in posts
-        if not p["data"].get("over_18", False)
-        and not p["data"].get("stickied", False)
-        and p["data"].get("post_hint", "") == "image"
-        and p["data"]["url"].endswith((".jpg", ".jpeg", ".png", ".gif"))
-    ]
+        for subreddit in subreddits:
+            try:
+                async with session.get(
+                    f"https://www.reddit.com/r/{subreddit}/hot.json?limit=50",
+                    headers={
+                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                        "Accept": "application/json",
+                    },
+                    timeout=aiohttp.ClientTimeout(total=10)
+                ) as resp:
+                    if resp.status != 200:
+                        continue
+                    data = await resp.json()
+                posts = data["data"]["children"]
+                images = [
+                    (p["data"], subreddit) for p in posts
+                    if not p["data"].get("over_18", False)
+                    and not p["data"].get("stickied", False)
+                    and p["data"].get("url", "").endswith((".jpg", ".jpeg", ".png", ".gif"))
+                ]
+                if images:
+                    break
+            except Exception:
+                continue
     if not images:
-        await interaction.followup.send("❌ Aucun meme trouvé, réessaie !", ephemeral=True)
+        await interaction.followup.send("❌ Aucun meme trouvé, réessaie dans quelques secondes !", ephemeral=True)
         return
-    post = images[secrets.randbelow(len(images))]
+    post, sub = images[secrets.randbelow(len(images))]
     embed = discord.Embed(
         title=post["title"][:256],
         url=f"https://reddit.com{post['permalink']}",
         color=discord.Color.orange()
     )
     embed.set_image(url=post["url"])
-    embed.set_footer(text=f"👍 {post['ups']} | r/{subreddit}")
+    embed.set_footer(text=f"👍 {post['ups']} | r/{sub}")
     await interaction.followup.send(embed=embed)
 
 # =================== EVENTS ===================
